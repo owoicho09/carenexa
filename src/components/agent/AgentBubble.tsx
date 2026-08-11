@@ -49,7 +49,9 @@ function displayTurns(messages: ChatMessage[]): { role: "user" | "assistant"; te
 export function AgentBubble() {
   const [open, setOpen] = useState(false);
   // Lazy initializer runs once on mount — the correct way to seed state from
-  // localStorage without an effect or a ref read during render.
+  // localStorage without an effect or a ref read during render. The server always
+  // renders DEFAULT_POSITION (no localStorage there), so this one style attribute
+  // is expected to differ on first client paint — suppressed below, not patched up.
   const [position, setPosition] = useState(readSavedPosition);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [input, setInput] = useState("");
@@ -167,7 +169,11 @@ export function AgentBubble() {
   const turns = displayTurns(messages);
 
   return (
-    <div className="fixed z-[70] print:hidden" style={{ right: position.x, bottom: position.y }}>
+    <div
+      className="fixed z-[70] print:hidden"
+      style={{ right: position.x, bottom: position.y }}
+      suppressHydrationWarning
+    >
       {open && (
         <div className="animate-modal-in mb-3 flex h-[28rem] w-80 flex-col overflow-hidden rounded-xl border border-[var(--color-border)] bg-[var(--color-surface)] shadow-2xl">
           <div className="flex items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-brand)] px-4 py-3 text-white">

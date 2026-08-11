@@ -30,10 +30,12 @@ export default async function StaffPage() {
           </thead>
           <tbody>
             {staff.map((s) => (
-              <tr key={s.id} className="border-b border-[var(--color-border)] last:border-0">
-                <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">
-                  <Link href={`/admin/staff/${s.id}`} className="hover:text-[var(--color-brand)]">{s.fullName}</Link>
-                  <p className="text-xs text-[var(--color-text-muted)]">{s.jobTitle}</p>
+              <tr key={s.id} className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-page)]">
+                <td className="p-0">
+                  <Link href={`/admin/staff/${s.id}`} className="block px-4 py-2.5">
+                    <span className="font-medium text-[var(--color-text)] group-hover:text-[var(--color-brand)]">{s.fullName}</span>
+                    <p className="text-xs text-[var(--color-text-muted)]">{s.jobTitle}</p>
+                  </Link>
                 </td>
                 <td className="py-2.5 text-[var(--color-text-muted)]">{ROLE_LABEL[s.role]}</td>
                 <td className="py-2.5 text-[var(--color-text-muted)]">{s.department?.name ?? "—"}</td>

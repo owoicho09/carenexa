@@ -49,7 +49,23 @@ export default async function PatientsPage({
 
       <Panel>
         {patients.length === 0 ? (
-          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">No patients match that search.</p>
+          <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
+            {query ? (
+              <>
+                No patients match &ldquo;{query}&rdquo;.{" "}
+                <Link href="/records/register" className="font-medium text-[var(--color-brand)] hover:underline">
+                  Register a new patient.
+                </Link>
+              </>
+            ) : (
+              <>
+                No patients registered yet.{" "}
+                <Link href="/records/register" className="font-medium text-[var(--color-brand)] hover:underline">
+                  Register the first one.
+                </Link>
+              </>
+            )}
+          </p>
         ) : (
           <table className="w-full text-sm">
             <thead>
@@ -59,22 +75,20 @@ export default async function PatientsPage({
                 <th className="py-2 font-medium">Card Type</th>
                 <th className="py-2 font-medium">Age / Sex</th>
                 <th className="py-2 font-medium">Phone</th>
-                <th className="py-2"></th>
               </tr>
             </thead>
             <tbody>
               {patients.map((p) => (
-                <tr key={p.id} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">{p.fullName}</td>
+                <tr key={p.id} className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-page)]">
+                  <td className="p-0">
+                    <Link href={`/patients/${p.id}`} className="block px-4 py-2.5 font-medium text-[var(--color-text)] group-hover:text-[var(--color-brand)]">
+                      {p.fullName}
+                    </Link>
+                  </td>
                   <td className="py-2.5 font-mono text-xs text-[var(--color-text-muted)]">{p.hospitalNumber}</td>
                   <td className="py-2.5"><Badge tone="brand">{p.cardType.name}</Badge></td>
                   <td className="py-2.5 text-[var(--color-text-muted)]">{formatAge(p.dateOfBirth)} / {p.sex === "MALE" ? "M" : "F"}</td>
                   <td className="py-2.5 text-[var(--color-text-muted)]">{p.phone}</td>
-                  <td className="py-2.5 text-right pr-4">
-                    <Link href={`/patients/${p.id}`} className="text-sm font-medium text-[var(--color-brand)] hover:underline">
-                      Open record
-                    </Link>
-                  </td>
                 </tr>
               ))}
             </tbody>

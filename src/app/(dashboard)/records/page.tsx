@@ -62,7 +62,10 @@ export default async function RecordsPage({
           <div className="mt-4 overflow-x-auto">
             {patients.length === 0 ? (
               <p className="py-6 text-sm text-[var(--color-text-muted)]">
-                No patient found for &ldquo;{query}&rdquo;. Register them as a new patient.
+                No patient found for &ldquo;{query}&rdquo;.{" "}
+                <Link href="/records/register" className="font-medium text-[var(--color-brand)] hover:underline">
+                  Register them as a new patient.
+                </Link>
               </p>
             ) : (
               <table className="w-full text-sm">

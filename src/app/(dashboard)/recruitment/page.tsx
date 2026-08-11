@@ -35,21 +35,19 @@ export default async function RecruitmentPage() {
                 <th className="py-2 font-medium">Department</th>
                 <th className="py-2 font-medium">Status</th>
                 <th className="py-2 font-medium">Applications</th>
-                <th className="py-2"></th>
               </tr>
             </thead>
             <tbody>
               {vacancies.map((v) => (
-                <tr key={v.id} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="px-4 py-2.5 font-medium text-[var(--color-text)]">{v.title}</td>
+                <tr key={v.id} className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-page)]">
+                  <td className="p-0">
+                    <Link href={`/recruitment/vacancies/${v.id}`} className="block px-4 py-2.5 font-medium text-[var(--color-text)] group-hover:text-[var(--color-brand)]">
+                      {v.title}
+                    </Link>
+                  </td>
                   <td className="py-2.5 text-[var(--color-text-muted)]">{v.department?.name ?? "—"}</td>
                   <td className="py-2.5"><Badge tone={statusTone[v.status]}>{v.status}</Badge></td>
                   <td className="py-2.5 text-[var(--color-text-muted)]">{v._count.applications}</td>
-                  <td className="py-2.5 text-right pr-4">
-                    <Link href={`/recruitment/vacancies/${v.id}`} className="text-sm font-medium text-[var(--color-brand)] hover:underline">
-                      Open
-                    </Link>
-                  </td>
                 </tr>
               ))}
             </tbody>

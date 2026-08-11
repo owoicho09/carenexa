@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useActionState } from "react";
 import { submitGenericOutcomeAction } from "../actions";
 import { Field, Input, FormError } from "@/components/ui/Field";
@@ -13,7 +14,15 @@ export function GenericOutcomeHandler({ requestId, fields }: { requestId: string
   useActionToast(pending, Boolean(state?.error), "Request completed");
 
   if (fields.length === 0) {
-    return <p className="text-sm text-[var(--color-text-muted)]">This department has no outcome fields configured yet — an administrator can add some under Departments.</p>;
+    return (
+      <p className="text-sm text-[var(--color-text-muted)]">
+        This department has no outcome fields configured yet — an administrator can{" "}
+        <Link href="/admin/departments" className="font-medium text-[var(--color-brand)] hover:underline">
+          add some under Departments
+        </Link>
+        .
+      </p>
+    );
   }
 
   return (

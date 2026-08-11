@@ -74,23 +74,19 @@ export default async function VacancyDetailPage({ params }: { params: Promise<{ 
                 <th className="px-4 py-2 font-medium">Candidate</th>
                 <th className="py-2 font-medium">Stage</th>
                 <th className="py-2 font-medium">Score</th>
-                <th className="py-2"></th>
               </tr>
             </thead>
             <tbody>
               {vacancy.applications.map((a) => (
-                <tr key={a.id} className="border-b border-[var(--color-border)] last:border-0">
-                  <td className="px-4 py-2.5">
-                    <p className="font-medium text-[var(--color-text)]">{a.candidate.fullName}</p>
-                    <p className="text-xs text-[var(--color-text-muted)]">{a.candidate.email}</p>
+                <tr key={a.id} className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 hover:bg-[var(--color-page)]">
+                  <td className="p-0">
+                    <Link href={`/recruitment/applications/${a.id}`} className="block px-4 py-2.5">
+                      <p className="font-medium text-[var(--color-text)] group-hover:text-[var(--color-brand)]">{a.candidate.fullName}</p>
+                      <p className="text-xs text-[var(--color-text-muted)]">{a.candidate.email}</p>
+                    </Link>
                   </td>
                   <td className="py-2.5"><Badge tone={stageTone[a.stage]}>{a.stage}</Badge></td>
                   <td className="py-2.5 text-[var(--color-text-muted)]">{a.screeningScore ?? "—"}</td>
-                  <td className="py-2.5 text-right pr-4">
-                    <Link href={`/recruitment/applications/${a.id}`} className="text-sm font-medium text-[var(--color-brand)] hover:underline">
-                      Review
-                    </Link>
-                  </td>
                 </tr>
               ))}
             </tbody>

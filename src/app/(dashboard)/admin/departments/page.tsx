@@ -29,13 +29,16 @@ export default async function DepartmentsPage() {
               <th className="py-2 font-medium">Description</th>
               <th className="py-2 font-medium">Accepts</th>
               <th className="py-2 font-medium">Staff</th>
-              <th className="py-2"></th>
             </tr>
           </thead>
           <tbody>
             {departments.map((d) => (
-              <tr key={d.id} className="border-b border-[var(--color-border)] last:border-0 align-top">
-                <td className="px-4 py-2.5 font-medium whitespace-nowrap text-[var(--color-text)]">{d.name}</td>
+              <tr key={d.id} className="group cursor-pointer border-b border-[var(--color-border)] last:border-0 align-top hover:bg-[var(--color-page)]">
+                <td className="p-0">
+                  <Link href={`/admin/departments/${d.id}/edit`} className="block px-4 py-2.5 font-medium whitespace-nowrap text-[var(--color-text)] group-hover:text-[var(--color-brand)]">
+                    {d.name}
+                  </Link>
+                </td>
                 <td className="py-2.5 max-w-md text-[var(--color-text-muted)]">{d.description}</td>
                 <td className="py-2.5">
                   <div className="flex max-w-xs flex-wrap gap-1">
@@ -47,11 +50,6 @@ export default async function DepartmentsPage() {
                   </div>
                 </td>
                 <td className="py-2.5 text-[var(--color-text-muted)]">{d._count.staff}</td>
-                <td className="py-2.5 text-right pr-4">
-                  <Link href={`/admin/departments/${d.id}/edit`} className="text-sm font-medium text-[var(--color-brand)] hover:underline">
-                    Edit
-                  </Link>
-                </td>
               </tr>
             ))}
           </tbody>
