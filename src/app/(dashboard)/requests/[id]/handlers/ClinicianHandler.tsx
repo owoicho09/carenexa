@@ -56,7 +56,7 @@ function NoteForm({ requestId }: { requestId: string }) {
           />
         </Field>
         <div className="flex justify-end">
-          <Button type="submit" variant="ghost" size="sm" disabled={draftPending || !shorthand.trim()}>
+          <Button type="submit" variant="outline" size="sm" loading={draftPending} disabled={!shorthand.trim()}>
             {draftPending ? "Drafting…" : "Draft with AI"}
           </Button>
         </div>

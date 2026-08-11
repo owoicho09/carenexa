@@ -49,7 +49,29 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
           <div><p className="text-xs font-medium text-[var(--color-text-faint)] uppercase">Phone</p><p>{application.candidate.phone}</p></div>
         </div>
         <p className="mt-4 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">CV</p>
-        <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text-muted)]">{application.cvText}</p>
+        {application.cvFileName ? (
+          <a
+            href={`/api/recruitment/applications/${application.id}/cv`}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="mt-1 inline-flex items-center gap-1.5 text-sm font-medium text-[var(--color-brand)] hover:underline"
+          >
+            <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0">
+              <path
+                d="M7 3h7l4 4v13a1 1 0 01-1 1H7a1 1 0 01-1-1V4a1 1 0 011-1z"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinejoin="round"
+              />
+              <path d="M14 3v4h4" stroke="currentColor" strokeWidth="1.5" strokeLinejoin="round" />
+            </svg>
+            {application.cvFileName}
+          </a>
+        ) : application.cvText ? (
+          <p className="mt-1 whitespace-pre-wrap text-sm text-[var(--color-text-muted)]">{application.cvText}</p>
+        ) : (
+          <p className="mt-1 text-sm text-[var(--color-text-faint)]">No CV on file.</p>
+        )}
         {application.coverNote && (
           <>
             <p className="mt-4 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Cover note</p>

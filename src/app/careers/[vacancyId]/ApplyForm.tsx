@@ -27,8 +27,15 @@ export function ApplyForm({ vacancyId }: { vacancyId: string }) {
         <Field label="Email" htmlFor="email"><Input id="email" name="email" type="email" required /></Field>
         <Field label="Phone" htmlFor="phone"><Input id="phone" name="phone" required placeholder="0803 123 4567" /></Field>
       </div>
-      <Field label="CV" htmlFor="cvText" hint="Paste the text of your CV.">
-        <Textarea id="cvText" name="cvText" required className="min-h-40" />
+      <Field label="CV" htmlFor="cvFile" hint="PDF or Word document, up to 5MB.">
+        <input
+          id="cvFile"
+          name="cvFile"
+          type="file"
+          accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+          required
+          className="block w-full text-sm text-[var(--color-text-muted)] file:mr-3 file:rounded-md file:border-0 file:bg-[var(--color-brand)] file:px-3 file:py-2 file:text-sm file:font-medium file:text-white hover:file:bg-[var(--color-brand-hover)]"
+        />
       </Field>
       <Field label="Cover note" htmlFor="coverNote" hint="Optional">
         <Textarea id="coverNote" name="coverNote" />

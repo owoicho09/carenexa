@@ -25,7 +25,7 @@ export function AiSummaryPanel({ patientId, aiConfigured, initialSummary }: Prop
         {aiConfigured && (
           <form action={formAction}>
             <input type="hidden" name="patientId" value={patientId} />
-            <Button type="submit" variant="ghost" size="sm" loading={pending}>
+            <Button type="submit" variant="outline" size="sm" loading={pending}>
               {pending ? "Generating…" : text ? "Regenerate" : "Generate summary"}
             </Button>
           </form>

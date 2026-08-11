@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { generateText, AI_MODEL_REASONING, isAiConfigured } from "@/lib/ai/client";
+import { generateText, generateTextFromPdf, AI_MODEL_REASONING, isAiConfigured } from "@/lib/ai/client";
 
 const SYSTEM_PROMPT = `You screen a job candidate's CV against a specific role's stated requirements for a
 Nigerian hospital. You do not decide whether to hire — a human recruiter reviews your score and reasoning
@@ -17,9 +17,31 @@ export async function screenApplication(applicationId: string) {
   });
   if (!application) return { error: "Application not found." as const };
 
-  const prompt = `Role: ${application.vacancy.title}\nRequirements:\n${application.vacancy.requirements.map((r) => `- ${r}`).join("\n")}\n\nCandidate CV:\n${application.cvText}${application.coverNote ? `\n\nCover note:\n${application.coverNote}` : ""}`;
+  const roleContext = `Role: ${application.vacancy.title}\nRequirements:\n${application.vacancy.requirements.map((r) => `- ${r}`).join("\n")}${application.coverNote ? `\n\nCover note:\n${application.coverNote}` : ""}`;
 
-  const raw = await generateText({ model: AI_MODEL_REASONING, system: SYSTEM_PROMPT, prompt, maxTokens: 500 });
+  let raw: string;
+  if (application.cvFileMimeType === "application/pdf" && application.cvFileData) {
+    const pdfBase64 = Buffer.from(application.cvFileData).toString("base64");
+    raw = await generateTextFromPdf({
+      model: AI_MODEL_REASONING,
+      system: SYSTEM_PROMPT,
+      prompt: `${roleContext}\n\nThe candidate's CV is attached as a PDF — read it and score it.`,
+      pdfBase64,
+      maxTokens: 500,
+    });
+  } else if (application.cvText) {
+    raw = await generateText({
+      model: AI_MODEL_REASONING,
+      system: SYSTEM_PROMPT,
+      prompt: `${roleContext}\n\nCandidate CV:\n${application.cvText}`,
+      maxTokens: 500,
+    });
+  } else {
+    return {
+      error:
+        "Automatic screening isn't available for this file type (Word documents aren't supported yet) — download the CV and review it directly." as const,
+    };
+  }
 
   let parsed: { score: number; reasoning: string };
   try {
@@ -33,7 +55,7 @@ export async function screenApplication(applicationId: string) {
       type: "CV_SCREENING",
       applicationId,
       model: AI_MODEL_REASONING,
-      input: { prompt },
+      input: { roleContext },
       output: parsed,
       requiresApproval: true,
     },

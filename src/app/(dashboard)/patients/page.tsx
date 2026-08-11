@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { db } from "@/lib/db";
+import { requireSession } from "@/lib/auth";
 import { PageHeader, Panel } from "@/components/ui/Panel";
-import { Input } from "@/components/ui/Field";
-import { Button } from "@/components/ui/Button";
+import { Input, Select } from "@/components/ui/Field";
+import { Button, LinkButton } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 
 function formatAge(dateOfBirth: Date) {
@@ -13,36 +14,53 @@ function formatAge(dateOfBirth: Date) {
 export default async function PatientsPage({
   searchParams,
 }: {
-  searchParams: Promise<{ q?: string }>;
+  searchParams: Promise<{ q?: string; cardTypeId?: string }>;
 }) {
-  const { q } = await searchParams;
+  const session = await requireSession();
+  const canRegister = session.role === "ADMIN" || session.departmentSlug === "records";
+
+  const { q, cardTypeId } = await searchParams;
   const query = q?.trim();
 
-  const patients = await db.patient.findMany({
-    where: {
-      isDeleted: false,
-      ...(query
-        ? {
-            OR: [
-              { fullName: { contains: query, mode: "insensitive" } },
-              { phone: { contains: query, mode: "insensitive" } },
-              { hospitalNumber: { contains: query, mode: "insensitive" } },
-            ],
-          }
-        : {}),
-    },
-    include: { cardType: true },
-    orderBy: { fullName: "asc" },
-    take: 50,
-  });
+  const [patients, cardTypes] = await Promise.all([
+    db.patient.findMany({
+      where: {
+        isDeleted: false,
+        ...(cardTypeId ? { cardTypeId } : {}),
+        ...(query
+          ? {
+              OR: [
+                { fullName: { contains: query, mode: "insensitive" } },
+                { phone: { contains: query, mode: "insensitive" } },
+                { hospitalNumber: { contains: query, mode: "insensitive" } },
+              ],
+            }
+          : {}),
+      },
+      include: { cardType: true },
+      orderBy: { fullName: "asc" },
+      take: 50,
+    }),
+    db.cardType.findMany({ orderBy: { name: "asc" } }),
+  ]);
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Patients" description="Every patient ever registered — findable by name, phone, or hospital number." />
+      <PageHeader
+        title="Patients"
+        description="Every patient ever registered — findable by name, phone, or hospital number."
+        action={canRegister ? <LinkButton href="/records/register">Register patient</LinkButton> : undefined}
+      />
 
       <Panel className="p-4">
         <form className="flex gap-2">
           <Input name="q" defaultValue={query} placeholder="Search by name, phone, or hospital number…" className="max-w-md" />
+          <Select name="cardTypeId" defaultValue={cardTypeId ?? ""} className="w-auto">
+            <option value="">All card types</option>
+            {cardTypes.map((c) => (
+              <option key={c.id} value={c.id}>{c.name}</option>
+            ))}
+          </Select>
           <Button type="submit" variant="secondary">Search</Button>
         </form>
       </Panel>
@@ -50,18 +68,12 @@ export default async function PatientsPage({
       <Panel>
         {patients.length === 0 ? (
           <p className="px-4 py-6 text-sm text-[var(--color-text-muted)]">
-            {query ? (
+            {query || cardTypeId ? "No patients match those filters." : "No patients registered yet."}
+            {canRegister && (
               <>
-                No patients match &ldquo;{query}&rdquo;.{" "}
+                {" "}
                 <Link href="/records/register" className="font-medium text-[var(--color-brand)] hover:underline">
-                  Register a new patient.
-                </Link>
-              </>
-            ) : (
-              <>
-                No patients registered yet.{" "}
-                <Link href="/records/register" className="font-medium text-[var(--color-brand)] hover:underline">
-                  Register the first one.
+                  {query || cardTypeId ? "Register a new patient." : "Register the first one."}
                 </Link>
               </>
             )}

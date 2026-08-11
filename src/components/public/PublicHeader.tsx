@@ -1,12 +1,13 @@
 import Link from "next/link";
 import { LinkButton } from "@/components/ui/Button";
+import { Logo } from "@/components/ui/Logo";
 
 export function PublicHeader() {
   return (
     <header className="border-b border-[var(--color-border)] bg-[var(--color-surface)]">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-6 py-4">
         <Link href="/" className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[var(--color-brand)] text-sm font-semibold text-white">CN</div>
+          <Logo size={32} />
           <span className="text-base font-semibold text-[var(--color-text)]">CareNexa Hospital</span>
         </Link>
         <nav className="flex items-center gap-6">

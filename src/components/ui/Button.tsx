@@ -2,7 +2,7 @@ import { clsx } from "clsx";
 import Link from "next/link";
 import type { ButtonHTMLAttributes } from "react";
 
-type Variant = "primary" | "secondary" | "danger" | "ghost";
+type Variant = "primary" | "secondary" | "danger" | "ghost" | "outline";
 type Size = "sm" | "md";
 
 const base =
@@ -14,6 +14,8 @@ const variants: Record<Variant, string> = {
     "bg-[var(--color-surface)] text-[var(--color-text)] border border-[var(--color-border-strong)] hover:bg-[var(--color-page)]",
   danger: "bg-[var(--color-danger)] text-white hover:opacity-90",
   ghost: "text-[var(--color-text-muted)] hover:bg-[var(--color-page)]",
+  outline:
+    "border border-[var(--color-brand)] text-[var(--color-brand)] bg-transparent hover:bg-[var(--color-brand-soft)]",
 };
 
 const sizes: Record<Size, string> = {

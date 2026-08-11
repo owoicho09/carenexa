@@ -6,6 +6,7 @@ import { logoutAction } from "@/lib/authActions";
 import { NotificationProvider } from "@/components/notifications/NotificationProvider";
 import { NotificationBell } from "@/components/notifications/NotificationBell";
 import { AgentBubble } from "@/components/agent/AgentBubble";
+import { Logo } from "@/components/ui/Logo";
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {
   const session = await readSession();
@@ -17,9 +18,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
         <header className="flex h-14 items-center justify-between border-b border-[var(--color-border)] bg-[var(--color-surface)] px-4 print:hidden">
           <div className="flex items-center gap-4">
             <Link href={homeRoute(session)} className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[var(--color-brand)] text-xs font-semibold text-white">
-                CN
-              </div>
+              <Logo size={28} />
               <span className="text-sm font-semibold text-[var(--color-text)]">CareNexa</span>
             </Link>
             <Link href="/patients" className="text-sm text-[var(--color-text-muted)] hover:text-[var(--color-text)]">
@@ -44,7 +43,7 @@ export default async function DashboardLayout({ children }: { children: React.Re
           </div>
         </header>
 
-        <div className="flex flex-1">{children}</div>
+        <div className="flex flex-1 [&>*]:min-w-0 [&>*]:flex-1">{children}</div>
       </div>
       <AgentBubble />
     </NotificationProvider>

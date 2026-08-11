@@ -98,7 +98,7 @@ function DischargeForm({ visitId, patientId }: { visitId: string; patientId: str
       <input type="hidden" name="patientId" value={patientId} />
       <p className="text-sm font-medium text-[var(--color-text)]">Discharge summary</p>
       <FormError>{state?.error}</FormError>
-      <Button type="submit" variant="ghost" size="sm" loading={pending}>
+      <Button type="submit" variant="outline" size="sm" loading={pending}>
         {pending ? "Generating…" : "Generate"}
       </Button>
     </form>
@@ -119,7 +119,7 @@ function ReferralForm({ visitId, patientId }: { visitId: string; patientId: stri
       <Field label="Reason" htmlFor={`referralReason-${visitId}`}>
         <Input id={`referralReason-${visitId}`} name="referralReason" placeholder="e.g. Further evaluation of murmur" />
       </Field>
-      <Button type="submit" variant="ghost" size="sm" loading={pending}>
+      <Button type="submit" variant="outline" size="sm" loading={pending}>
         {pending ? "Generating…" : "Generate"}
       </Button>
     </form>

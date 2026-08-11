@@ -13,6 +13,7 @@ export default async function AdminLayout({ children }: { children: React.ReactN
         </div>
         <nav className="flex-1 space-y-0.5 p-3">
           <WorkspaceNavLink href="/admin" label="Hospital Overview" exact />
+          <WorkspaceNavLink href="/patients" label="Patients" />
           <WorkspaceNavLink href="/admin/departments" label="Departments" />
           <WorkspaceNavLink href="/admin/staff" label="Staff" />
           <WorkspaceNavLink href="/admin/permissions" label="Permissions" />

@@ -557,7 +557,10 @@ model Application {
   candidateId  String
   candidate    Candidate         @relation(fields: [candidateId], references: [id])
 
-  cvText       String // extracted CV text, screened by AI against vacancy.requirements
+  cvFileName     String? // original filename, e.g. "jane-doe-cv.pdf"
+  cvFileMimeType String? // application/pdf, application/msword, or the docx MIME type
+  cvFileData     Bytes? // the uploaded file itself — served back via the CV download route
+  cvText       String? // legacy: pasted CV text from before file upload existed; screened by AI as a fallback
   coverNote    String?
   stage        ApplicationStage  @default(APPLIED)
   appliedAt    DateTime          @default(now())

@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
@@ -6,6 +7,16 @@ import { ApplyForm } from "./ApplyForm";
 import { PublicHeader, PublicFooter } from "@/components/public/PublicHeader";
 
 export const dynamic = "force-dynamic";
+
+export async function generateMetadata({ params }: { params: Promise<{ vacancyId: string }> }): Promise<Metadata> {
+  const { vacancyId } = await params;
+  const vacancy = await db.vacancy.findUnique({ where: { id: vacancyId } });
+  if (!vacancy) return { title: "Careers — CareNexa Hospital" };
+  return {
+    title: `${vacancy.title} — Careers at CareNexa Hospital`,
+    description: vacancy.description,
+  };
+}
 
 export default async function VacancyPublicPage({ params }: { params: Promise<{ vacancyId: string }> }) {
   const { vacancyId } = await params;

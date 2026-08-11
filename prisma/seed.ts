@@ -34,9 +34,9 @@ async function seedCardTypes() {
 async function seedDepartments() {
   const departments = [
     {
-      name: "Records",
+      name: "Front Desk / Records",
       slug: "records",
-      description: "Patient registration, filing, and hospital number issuance.",
+      description: "Front desk, patient registration, filing, and hospital number issuance.",
       acceptsRequestTypes: ["File Retrieval"],
       resultFields: { fields: [{ name: "note", label: "Note", type: "text" }] },
     },
@@ -156,16 +156,16 @@ async function seedStaff(departmentIds: Record<string, string>) {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const staff = [
-    { fullName: "Ngozi Adebayo", email: "admin@carenexa.ng", role: "ADMIN" as const, jobTitle: "Hospital Administrator", departmentSlug: "administration" },
-    { fullName: "Chidinma Okafor", email: "records@carenexa.ng", role: "RECORDS_OFFICER" as const, jobTitle: "Records Officer", departmentSlug: "records" },
-    { fullName: "Blessing Eze", email: "reception@carenexa.ng", role: "RECEPTIONIST" as const, jobTitle: "Front Desk Receptionist", departmentSlug: "records" },
-    { fullName: "Grace Okonkwo", email: "nurse@carenexa.ng", role: "NURSE" as const, jobTitle: "Nursing Officer", departmentSlug: "nursing" },
-    { fullName: "Folake Bello", email: "matron@carenexa.ng", role: "NURSE" as const, jobTitle: "Matron", departmentSlug: "nursing" },
-    { fullName: "Dr. Emeka Nwosu", email: "clinician@carenexa.ng", role: "CLINICIAN" as const, jobTitle: "Medical Officer", departmentSlug: "clinician" },
-    { fullName: "Dr. Aisha Bello", email: "consultant@carenexa.ng", role: "CLINICIAN" as const, jobTitle: "Consultant Physician", departmentSlug: "clinician" },
-    { fullName: "Tunde Fashola", email: "lab@carenexa.ng", role: "LAB_SCIENTIST" as const, jobTitle: "Laboratory Scientist II", departmentSlug: "lab" },
-    { fullName: "Chukwuemeka Obi", email: "pharmacist@carenexa.ng", role: "PHARMACIST" as const, jobTitle: "Pharmacist", departmentSlug: "pharmacy" },
-    { fullName: "Yetunde Balogun", email: "recruiter@carenexa.ng", role: "RECRUITER" as const, jobTitle: "HR / Recruitment Officer", departmentSlug: "recruitment" },
+    { fullName: "Ngozi Adebayo", email: "admin@carenexa.cloud", role: "ADMIN" as const, jobTitle: "Hospital Administrator", departmentSlug: "administration" },
+    { fullName: "Chidinma Okafor", email: "records@carenexa.cloud", role: "RECORDS_OFFICER" as const, jobTitle: "Records Officer", departmentSlug: "records" },
+    { fullName: "Blessing Eze", email: "reception@carenexa.cloud", role: "RECEPTIONIST" as const, jobTitle: "Front Desk Receptionist", departmentSlug: "records" },
+    { fullName: "Grace Okonkwo", email: "nurse@carenexa.cloud", role: "NURSE" as const, jobTitle: "Nursing Officer", departmentSlug: "nursing" },
+    { fullName: "Folake Bello", email: "matron@carenexa.cloud", role: "NURSE" as const, jobTitle: "Matron", departmentSlug: "nursing" },
+    { fullName: "Dr. Emeka Nwosu", email: "clinician@carenexa.cloud", role: "CLINICIAN" as const, jobTitle: "Medical Officer", departmentSlug: "clinician" },
+    { fullName: "Dr. Aisha Bello", email: "consultant@carenexa.cloud", role: "CLINICIAN" as const, jobTitle: "Consultant Physician", departmentSlug: "clinician" },
+    { fullName: "Tunde Fashola", email: "lab@carenexa.cloud", role: "LAB_SCIENTIST" as const, jobTitle: "Laboratory Scientist II", departmentSlug: "lab" },
+    { fullName: "Chukwuemeka Obi", email: "pharmacist@carenexa.cloud", role: "PHARMACIST" as const, jobTitle: "Pharmacist", departmentSlug: "pharmacy" },
+    { fullName: "Yetunde Balogun", email: "recruiter@carenexa.cloud", role: "RECRUITER" as const, jobTitle: "HR / Recruitment Officer", departmentSlug: "recruitment" },
   ];
 
   const created: Record<string, string> = {};
@@ -639,10 +639,10 @@ const PATIENT_STORIES: PatientStory[] = [
 ];
 
 async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: Record<string, string>, staffIds: Record<string, string>) {
-  const nurseId = staffIds["nurse@carenexa.ng"];
-  const clinicianIds = [staffIds["clinician@carenexa.ng"], staffIds["consultant@carenexa.ng"]];
-  const labId = staffIds["lab@carenexa.ng"];
-  const pharmacistId = staffIds["pharmacist@carenexa.ng"];
+  const nurseId = staffIds["nurse@carenexa.cloud"];
+  const clinicianIds = [staffIds["clinician@carenexa.cloud"], staffIds["consultant@carenexa.cloud"]];
+  const labId = staffIds["lab@carenexa.cloud"];
+  const pharmacistId = staffIds["pharmacist@carenexa.cloud"];
 
   let count = 0;
   for (const story of PATIENT_STORIES) {
@@ -676,7 +676,7 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
         data: {
           patientId: patient.id,
           openedAt,
-          openedById: staffIds["reception@carenexa.ng"],
+          openedById: staffIds["reception@carenexa.cloud"],
           status: v.status,
           presentingComplaint: v.presentingComplaint,
           closedAt: v.status === "CLOSED" ? new Date(openedAt.getTime() + 2 * 60 * 60 * 1000) : null,

@@ -18,6 +18,7 @@ type AgentResponse = {
 };
 
 const POSITION_KEY = "carenexa-agent-position";
+const WELCOMED_KEY = "carenexa-agent-welcomed";
 const DEFAULT_POSITION = { x: 24, y: 24 }; // distance from bottom-right
 
 function readSavedPosition(): { x: number; y: number } {
@@ -65,6 +66,18 @@ export function AgentBubble() {
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: scrollRef.current.scrollHeight });
   }, [messages, pending, loading]);
+
+  useEffect(() => {
+    // Open once per browser session so the agent introduces itself right after
+    // login, without popping back open on every page navigation or refresh.
+    if (!sessionStorage.getItem(WELCOMED_KEY)) {
+      sessionStorage.setItem(WELCOMED_KEY, "1");
+      // Deliberate: syncing with sessionStorage (a client-only external system) can
+      // only happen post-mount, so a one-time render after mount is unavoidable here.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setOpen(true);
+    }
+  }, []);
 
   function onPointerDown(e: React.PointerEvent) {
     dragState.current = { dragging: false, startX: e.clientX, startY: e.clientY, startPos: position };
@@ -183,9 +196,17 @@ export function AgentBubble() {
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
             {turns.length === 0 && !loading && (
-              <p className="text-sm text-[var(--color-text-muted)]">
-                Ask me to find a patient, check your queue, summarise someone&rsquo;s history, or act — I&rsquo;ll show you exactly what I&rsquo;m about to do before anything happens.
-              </p>
+              <div className="space-y-2 text-sm text-[var(--color-text-muted)]">
+                <p>
+                  Hi, I&rsquo;m your CareNexa assistant. Ask me to find a patient, pull up your queue, or
+                  summarise a visit history — or ask me to take an action, like sending a patient to a
+                  department or logging vitals.
+                </p>
+                <p>
+                  Anything that would change a record, I&rsquo;ll propose first and wait for your go-ahead
+                  before it actually happens.
+                </p>
+              </div>
             )}
             {turns.map((t, i) => (
               <div
@@ -245,18 +266,17 @@ export function AgentBubble() {
         onPointerDown={onPointerDown}
         onPointerMove={onPointerMove}
         onPointerUp={onPointerUp}
-        className="flex h-14 w-14 touch-none items-center justify-center rounded-full bg-[var(--color-brand)] text-white shadow-xl transition-transform hover:scale-105 active:scale-95"
-        aria-label="CareNexa Agent"
+        className="flex touch-none items-center gap-2 rounded-full bg-[var(--color-brand)] px-4 py-3 text-sm font-semibold text-white shadow-xl transition-transform hover:scale-[1.03] active:scale-95"
+        aria-label={open ? "Close CareNexa AI Agent" : "Open CareNexa AI Agent"}
       >
-        <svg viewBox="0 0 24 24" fill="none" className="h-6 w-6">
+        <svg viewBox="0 0 24 24" fill="none" className="h-4 w-4 shrink-0">
           <path
-            d="M12 3a5 5 0 015 5v1a3 3 0 013 3v3a3 3 0 01-3 3h-.5a4.5 4.5 0 01-9 0H7a3 3 0 01-3-3v-3a3 3 0 013-3V8a5 5 0 015-5z"
-            stroke="currentColor"
-            strokeWidth="1.5"
+            d="M12 2.5l1.8 4.2 4.2 1.8-4.2 1.8L12 14.5l-1.8-4.2L6 8.5l4.2-1.8L12 2.5z"
+            fill="currentColor"
           />
-          <circle cx="9.5" cy="12" r="1" fill="currentColor" />
-          <circle cx="14.5" cy="12" r="1" fill="currentColor" />
+          <path d="M19 14l.9 2.1 2.1.9-2.1.9-.9 2.1-.9-2.1L16 17l2.1-.9L19 14z" fill="currentColor" />
         </svg>
+        CareNexa AI Agent
       </button>
     </div>
   );

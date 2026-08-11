@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { PrintButton } from "@/components/patient/PrintButton";
+import { Logo } from "@/components/ui/Logo";
 
 export default async function PatientCardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
@@ -24,7 +25,9 @@ export default async function PatientCardPage({ params }: { params: Promise<{ id
       <div className="mx-auto w-full max-w-sm overflow-hidden rounded-xl border border-[var(--color-border)] shadow-sm print:shadow-none">
         <div className="bg-[var(--color-brand)] px-5 py-4 text-white">
           <div className="flex items-center gap-2">
-            <div className="flex h-6 w-6 items-center justify-center rounded bg-white/20 text-xs font-bold">CN</div>
+            <div className="flex h-6 w-6 items-center justify-center rounded bg-white/20 text-white">
+              <Logo size={16} monochrome />
+            </div>
             <span className="text-sm font-semibold">CareNexa Hospital</span>
           </div>
           <p className="mt-1 text-xs text-white/80">Patient Identification Card</p>

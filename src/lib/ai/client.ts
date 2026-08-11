@@ -29,3 +29,31 @@ export async function generateText(input: { model: string; system: string; promp
   const block = message.content.find((b) => b.type === "text");
   return block?.type === "text" ? block.text : "";
 }
+
+// Claude reads the PDF directly (native document support) — no separate text
+// extraction library needed for the CV-upload flow.
+export async function generateTextFromPdf(input: {
+  model: string;
+  system: string;
+  prompt: string;
+  pdfBase64: string;
+  maxTokens?: number;
+}) {
+  const anthropic = getAiClient();
+  const message = await anthropic.messages.create({
+    model: input.model,
+    max_tokens: input.maxTokens ?? 1024,
+    system: input.system,
+    messages: [
+      {
+        role: "user",
+        content: [
+          { type: "document", source: { type: "base64", media_type: "application/pdf", data: input.pdfBase64 } },
+          { type: "text", text: input.prompt },
+        ],
+      },
+    ],
+  });
+  const block = message.content.find((b) => b.type === "text");
+  return block?.type === "text" ? block.text : "";
+}

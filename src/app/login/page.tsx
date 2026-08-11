@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { redirect } from "next/navigation";
 import { readSession, homeRoute } from "@/lib/auth";
+import { Logo } from "@/components/ui/Logo";
 import { LoginForm } from "./LoginForm";
 
 export default async function LoginPage() {
@@ -11,8 +12,8 @@ export default async function LoginPage() {
     <div className="flex min-h-screen items-center justify-center bg-[var(--color-page)] px-4">
       <div className="w-full max-w-sm">
         <div className="mb-8 text-center">
-          <div className="mb-3 inline-flex h-11 w-11 items-center justify-center rounded-lg bg-[var(--color-brand)] text-lg font-semibold text-white">
-            CN
+          <div className="mb-3 flex justify-center">
+            <Logo size={44} />
           </div>
           <h1 className="text-lg font-semibold text-[var(--color-text)]">CareNexa</h1>
           <p className="mt-1 text-sm text-[var(--color-text-muted)]">Sign in with your hospital account</p>

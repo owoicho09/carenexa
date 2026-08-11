@@ -17,12 +17,15 @@ export const metadata: Metadata = {
   description: "Hospital records, departments, and recruitment — one system.",
 };
 
-// This is a desktop-first clinical workstation app, not a responsive mobile
-// site — render at a real desktop width and let small screens zoom/scroll
-// rather than reflowing dense tables and multi-column workspaces into a
-// single narrow column.
+// This is a desktop-first clinical workstation app: the layout itself (fixed
+// sidebars, multi-column panels, dense tables) assumes real desktop width
+// rather than reflowing into a mobile column. That's a CSS/layout decision,
+// not a viewport one — the viewport must stay device-width, or the browser
+// renders the whole page inside an artificial fixed-width canvas and scales
+// it to fit, which is what made everything look shrunken/tablet-sized.
 export const viewport: Viewport = {
-  width: 1280,
+  width: "device-width",
+  initialScale: 1,
 };
 
 export default function RootLayout({ children }: LayoutProps<"/">) {
