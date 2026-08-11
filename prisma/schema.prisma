@@ -1,0 +1,582 @@
+// CareNexa data model.
+// See CareNexa-BRIEF.md for the vocabulary this schema mirrors (Patient, Visit,
+// Department, Request, Staff — kept literal on purpose).
+
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+// ---------------------------------------------------------------------------
+// Identity & access
+// ---------------------------------------------------------------------------
+
+enum StaffRole {
+  ADMIN
+  RECORDS_OFFICER
+  NURSE
+  CLINICIAN
+  LAB_SCIENTIST
+  PHARMACIST
+  RECEPTIONIST
+  RECRUITER
+}
+
+model StaffMember {
+  id           String    @id @default(cuid())
+  fullName     String
+  email        String    @unique
+  passwordHash String
+  role         StaffRole
+  jobTitle     String // e.g. "Consultant", "Matron", "Laboratory Scientist II"
+  departmentId String?
+  department   Department? @relation(fields: [departmentId], references: [id])
+  isActive     Boolean   @default(true)
+  toastNotificationsEnabled Boolean @default(true)
+  createdAt    DateTime  @default(now())
+
+  hiredFromCandidateId String?   @unique
+  hiredFromCandidate   Candidate? @relation(fields: [hiredFromCandidateId], references: [id])
+
+  requestsMade      Request[]        @relation("RequestedBy")
+  requestsFulfilled Request[]        @relation("FulfilledBy")
+  vitalsRecorded    VitalsRecord[]
+  notesAuthored     ClinicalNote[]
+  labResultsEntered LabResult[]
+  prescriptionsMade Prescription[]
+  dispensations     Dispensation[]
+  visitsOpened      Visit[]          @relation("VisitOpenedBy")
+  diagnoses         Diagnosis[]
+  appointmentsBooked Appointment[]
+  notifications     Notification[]
+  communicationsSent Communication[]
+  auditLogEntries    AuditLog[]
+  passwordResetTokens PasswordResetToken[]
+
+  @@index([departmentId])
+}
+
+model RolePermission {
+  id         String    @id @default(cuid())
+  role       StaffRole
+  permission String
+  enabled    Boolean   @default(false)
+
+  @@unique([role, permission])
+}
+
+model AuditLog {
+  id           String   @id @default(cuid())
+  actorId      String
+  actor        StaffMember @relation(fields: [actorId], references: [id])
+  action       String // "STAFF_CREATED", "PATIENT_DELETED", "DEPARTMENT_EDITED", ...
+  targetType   String // "StaffMember", "Patient", "Department", ...
+  targetId     String?
+  targetLabel  String? // human-readable, e.g. patient name or department name
+  detail       String?
+  createdAt    DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([targetType, targetId])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  staffId   String
+  staff     StaffMember @relation(fields: [staffId], references: [id])
+  token     String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Departments — admin-configurable at runtime, never hardcoded.
+// ---------------------------------------------------------------------------
+
+model Department {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  slug        String   @unique
+  description String
+  acceptsRequestTypes String[] // free-form labels this department can receive, e.g. ["Laboratory Test", "Blood Culture"]
+  resultFields        Json     // shape of the outcome form this department fills in, admin-defined
+  createdAt   DateTime @default(now())
+
+  staff             StaffMember[]
+  requestsReceived  Request[]     @relation("RequestToDepartment")
+  requestsSent      Request[]     @relation("RequestFromDepartment")
+  vacancies         Vacancy[]
+  appointments      Appointment[]
+  notifications     Notification[]
+}
+
+// ---------------------------------------------------------------------------
+// Patients
+// ---------------------------------------------------------------------------
+
+enum Sex {
+  MALE
+  FEMALE
+}
+
+enum Genotype {
+  AA
+  AS
+  SS
+  AC
+  SC
+}
+
+model CardType {
+  id          String  @id @default(cuid())
+  name        String  @unique // "General Outpatient", "Private", "Antenatal", "Child Welfare", "Staff"
+  seriesCode  String  @unique // "GOP", "PVT", "ANC", "CWC", "STF"
+  description String
+  counters    HospitalNumberCounter[]
+  patients    Patient[]
+}
+
+model HospitalNumberCounter {
+  id         String   @id @default(cuid())
+  cardTypeId String
+  cardType   CardType @relation(fields: [cardTypeId], references: [id])
+  year       Int
+  lastNumber Int      @default(0)
+
+  @@unique([cardTypeId, year])
+}
+
+model Patient {
+  id             String    @id @default(cuid())
+  hospitalNumber String    @unique // e.g. GOP/2026/00412
+  cardTypeId     String
+  cardType       CardType  @relation(fields: [cardTypeId], references: [id])
+
+  fullName       String
+  dateOfBirth    DateTime
+  sex            Sex
+  phone          String
+  address        String
+  bloodGroup     String? // "O+", "A-", ...
+  genotype       Genotype?
+  allergies      String[] // ["Penicillin", "Sulfa drugs"]
+
+  nextOfKinName  String
+  nextOfKinPhone String
+  nextOfKinRelation String
+
+  registeredAt   DateTime  @default(now())
+  isDeleted      Boolean   @default(false)
+  deletedAt      DateTime?
+
+  visits         Visit[]
+  appointments   Appointment[]
+  communications Communication[]
+
+  @@index([fullName])
+  @@index([phone])
+}
+
+// ---------------------------------------------------------------------------
+// Visits — everything clinical hangs off one of these.
+// ---------------------------------------------------------------------------
+
+enum VisitStatus {
+  OPEN
+  CLOSED
+}
+
+model Visit {
+  id            String      @id @default(cuid())
+  patientId     String
+  patient       Patient     @relation(fields: [patientId], references: [id])
+  openedAt      DateTime    @default(now())
+  openedById    String?
+  openedBy      StaffMember? @relation("VisitOpenedBy", fields: [openedById], references: [id])
+  closedAt      DateTime?
+  status        VisitStatus @default(OPEN)
+  presentingComplaint String?
+  followUpDate  DateTime?
+  followUpNote  String?
+
+  requests       Request[]
+  vitals         VitalsRecord[]
+  notes          ClinicalNote[]
+  labResults     LabResult[]
+  prescriptions  Prescription[]
+  diagnoses      Diagnosis[]
+  aiArtifacts    AiArtifact[]
+
+  @@index([patientId])
+}
+
+// ---------------------------------------------------------------------------
+// Appointments — booked from the patient record or a department workspace.
+// ---------------------------------------------------------------------------
+
+enum AppointmentStatus {
+  SCHEDULED
+  COMPLETED
+  CANCELLED
+  NO_SHOW
+}
+
+model Appointment {
+  id           String            @id @default(cuid())
+  patientId    String
+  patient      Patient           @relation(fields: [patientId], references: [id])
+  departmentId String?
+  department   Department?       @relation(fields: [departmentId], references: [id])
+  scheduledFor DateTime
+  reason       String
+  status       AppointmentStatus @default(SCHEDULED)
+  notes        String?
+  createdById  String
+  createdBy    StaffMember       @relation(fields: [createdById], references: [id])
+  createdAt    DateTime          @default(now())
+
+  @@index([patientId])
+  @@index([scheduledFor])
+}
+
+// ---------------------------------------------------------------------------
+// Communications — simulated WhatsApp/Email, logged permanently on the record.
+// No provider is connected yet; a real one slots in behind the same SENT ->
+// DELIVERED state machine without changing the interface.
+// ---------------------------------------------------------------------------
+
+enum CommunicationChannel {
+  WHATSAPP
+  EMAIL
+}
+
+enum CommunicationStatus {
+  SENT
+  DELIVERED
+}
+
+model Communication {
+  id           String               @id @default(cuid())
+  patientId    String
+  patient      Patient              @relation(fields: [patientId], references: [id])
+  channel      CommunicationChannel
+  templateUsed String?
+  subject      String? // email only
+  body         String
+  status       CommunicationStatus  @default(SENT)
+  sentById     String
+  sentBy       StaffMember          @relation(fields: [sentById], references: [id])
+  sentAt       DateTime             @default(now())
+  deliveredAt  DateTime?
+
+  @@index([patientId])
+}
+
+// ---------------------------------------------------------------------------
+// Requests — the inter-department routing mechanism.
+// ---------------------------------------------------------------------------
+
+enum RequestStatus {
+  PENDING
+  IN_PROGRESS
+  COMPLETED
+  QUERIED
+}
+
+enum RequestUrgency {
+  ROUTINE
+  URGENT
+  EMERGENCY
+}
+
+model Request {
+  id               String         @id @default(cuid())
+  visitId          String
+  visit            Visit          @relation(fields: [visitId], references: [id])
+
+  fromDepartmentId String
+  fromDepartment   Department     @relation("RequestFromDepartment", fields: [fromDepartmentId], references: [id])
+  toDepartmentId   String
+  toDepartment     Department     @relation("RequestToDepartment", fields: [toDepartmentId], references: [id])
+
+  requestedById    String
+  requestedBy      StaffMember    @relation("RequestedBy", fields: [requestedById], references: [id])
+  fulfilledById    String?
+  fulfilledBy      StaffMember?   @relation("FulfilledBy", fields: [fulfilledById], references: [id])
+
+  requestType      String // "Full Blood Count", "Vitals Check", "Clinical Review", admin/department-defined
+  reason           String
+  urgency          RequestUrgency @default(ROUTINE)
+  status           RequestStatus  @default(PENDING)
+
+  queryNote        String? // set when status = QUERIED
+
+  outcome          Json? // free-form outcome for departments without a dedicated model (admin-defined resultFields)
+  outcomeSummary   String? // short human-readable line shown in queues/history for any outcome type
+
+  createdAt        DateTime       @default(now())
+  completedAt      DateTime?
+
+  labResults       LabResult[]
+  notifications    Notification[]
+
+  @@index([visitId])
+  @@index([toDepartmentId, status])
+}
+
+// ---------------------------------------------------------------------------
+// Notifications — written from the request lifecycle, read by polling.
+// ---------------------------------------------------------------------------
+
+model Notification {
+  id           String      @id @default(cuid())
+  type         String // "REQUEST_INCOMING" | "REQUEST_COMPLETED" | "REQUEST_QUERIED"
+  message      String
+
+  departmentId String? // notify anyone currently in this department (incoming work)
+  department   Department? @relation(fields: [departmentId], references: [id])
+  staffId      String? // notify this specific person (their own request was answered)
+  staff        StaffMember? @relation(fields: [staffId], references: [id])
+
+  requestId    String?
+  request      Request?    @relation(fields: [requestId], references: [id])
+
+  createdAt    DateTime    @default(now())
+  readAt       DateTime?
+
+  @@index([departmentId, readAt])
+  @@index([staffId, readAt])
+}
+
+// ---------------------------------------------------------------------------
+// Clinical records attached to a visit
+// ---------------------------------------------------------------------------
+
+model VitalsRecord {
+  id                  String      @id @default(cuid())
+  visitId             String
+  visit               Visit       @relation(fields: [visitId], references: [id])
+  recordedById        String
+  recordedBy          StaffMember @relation(fields: [recordedById], references: [id])
+  recordedAt          DateTime    @default(now())
+
+  systolicBp          Int?
+  diastolicBp         Int?
+  temperatureC         Float?
+  pulseBpm            Int?
+  respiratoryRate     Int?
+  weightKg            Float?
+  heightCm            Float?
+
+  @@index([visitId])
+}
+
+model ClinicalNote {
+  id           String      @id @default(cuid())
+  visitId      String
+  visit        Visit       @relation(fields: [visitId], references: [id])
+  authorId     String
+  author       StaffMember @relation(fields: [authorId], references: [id])
+  createdAt    DateTime    @default(now())
+
+  shorthand    String? // clinician's raw shorthand input, if AI-assisted
+  content      String // final structured note
+  isAiAssisted Boolean     @default(false)
+  signedAt     DateTime?
+
+  @@index([visitId])
+}
+
+enum LabResultType {
+  NUMERIC
+  QUALITATIVE
+}
+
+model LabResult {
+  id             String       @id @default(cuid())
+  visitId        String
+  visit          Visit        @relation(fields: [visitId], references: [id])
+  requestId      String?
+  request        Request?     @relation(fields: [requestId], references: [id])
+  enteredById    String
+  enteredBy      StaffMember  @relation(fields: [enteredById], references: [id])
+  enteredAt      DateTime     @default(now())
+
+  testName       String // "Fasting Blood Glucose", "Malaria Parasite"
+  resultType     LabResultType @default(NUMERIC)
+  value          Float? // set when resultType = NUMERIC
+  qualitativeValue String? // set when resultType = QUALITATIVE, e.g. "Positive", "Non-reactive"
+  unit           String // "mg/dL", or "" for qualitative tests
+  referenceLow   Float?
+  referenceHigh  Float?
+  isAbnormal     Boolean      @default(false)
+
+  @@index([visitId])
+  @@index([testName])
+}
+
+model Diagnosis {
+  id           String      @id @default(cuid())
+  visitId      String
+  visit        Visit       @relation(fields: [visitId], references: [id])
+  recordedById String
+  recordedBy   StaffMember @relation(fields: [recordedById], references: [id])
+  createdAt    DateTime    @default(now())
+
+  description  String
+  plan         String
+
+  @@index([visitId])
+}
+
+enum PrescriptionStatus {
+  PENDING
+  DISPENSED
+}
+
+model Prescription {
+  id           String              @id @default(cuid())
+  visitId      String
+  visit        Visit               @relation(fields: [visitId], references: [id])
+  prescribedById String
+  prescribedBy StaffMember         @relation(fields: [prescribedById], references: [id])
+  createdAt    DateTime            @default(now())
+
+  drugName     String
+  dosage       String // "500mg"
+  frequency    String // "TDS", "BD", "OD"
+  duration     String // "5 days"
+  status       PrescriptionStatus  @default(PENDING)
+
+  dispensation Dispensation?
+
+  @@index([visitId])
+}
+
+model Dispensation {
+  id             String       @id @default(cuid())
+  prescriptionId String       @unique
+  prescription   Prescription @relation(fields: [prescriptionId], references: [id])
+  dispensedById  String
+  dispensedBy    StaffMember  @relation(fields: [dispensedById], references: [id])
+  dispensedAt    DateTime     @default(now())
+  quantity       String
+  note           String?
+}
+
+// ---------------------------------------------------------------------------
+// AI layer — every generated artifact stored with attribution + approval.
+// ---------------------------------------------------------------------------
+
+enum AiArtifactType {
+  HISTORY_SUMMARY
+  RESULT_CONTEXT
+  NOTE_ASSISTANCE
+  DISCHARGE_SUMMARY
+  REFERRAL_LETTER
+  CV_SCREENING
+}
+
+model AiArtifact {
+  id           String         @id @default(cuid())
+  type         AiArtifactType
+  visitId      String?
+  visit        Visit?         @relation(fields: [visitId], references: [id])
+  applicationId String?
+  application  Application?   @relation(fields: [applicationId], references: [id])
+
+  model        String // model id used
+  input        Json // structured input snapshot for reproducibility
+  output       Json // structured output (summary text, score+reasoning, etc.)
+  createdAt    DateTime       @default(now())
+
+  requiresApproval Boolean    @default(false)
+  approvedById String?
+  approvedAt   DateTime?
+
+  @@index([visitId])
+  @@index([applicationId])
+}
+
+// ---------------------------------------------------------------------------
+// Recruitment
+// ---------------------------------------------------------------------------
+
+enum VacancyStatus {
+  DRAFT
+  PUBLISHED
+  CLOSED
+}
+
+model Vacancy {
+  id           String        @id @default(cuid())
+  title        String
+  departmentId String?
+  department   Department?   @relation(fields: [departmentId], references: [id])
+  description  String
+  requirements String[] // discrete requirement lines the AI screens CVs against
+  employmentType String // "Full-time", "Locum"
+  location     String
+  status       VacancyStatus @default(DRAFT)
+  publishedAt  DateTime?
+  closedAt     DateTime?
+  createdAt    DateTime      @default(now())
+
+  applications Application[]
+}
+
+enum ApplicationStage {
+  APPLIED
+  SCREENED
+  SHORTLISTED
+  INTERVIEWED
+  HIRED
+  REJECTED
+}
+
+model Candidate {
+  id        String   @id @default(cuid())
+  fullName  String
+  email     String
+  phone     String
+  createdAt DateTime @default(now())
+
+  applications Application[]
+  hiredAsStaff StaffMember?
+}
+
+model Application {
+  id           String            @id @default(cuid())
+  vacancyId    String
+  vacancy      Vacancy           @relation(fields: [vacancyId], references: [id])
+  candidateId  String
+  candidate    Candidate         @relation(fields: [candidateId], references: [id])
+
+  cvText       String // extracted CV text, screened by AI against vacancy.requirements
+  coverNote    String?
+  stage        ApplicationStage  @default(APPLIED)
+  appliedAt    DateTime          @default(now())
+
+  screeningScore    Int?
+  screeningReasoning String?
+  screeningOverrideNote String?
+
+  interview    Interview?
+  aiArtifacts  AiArtifact[]
+
+  @@index([vacancyId, stage])
+}
+
+model Interview {
+  id            String      @id @default(cuid())
+  applicationId String      @unique
+  application   Application @relation(fields: [applicationId], references: [id])
+  scheduledFor  DateTime
+  outcome       String? // recorded after the interview
+  createdAt     DateTime    @default(now())
+}
