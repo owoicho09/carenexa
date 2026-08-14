@@ -28,7 +28,7 @@ export function PublicFooter() {
           <div>
             <p className="font-medium text-[var(--color-text)]">CareNexa Hospital</p>
             <p className="mt-1">14 Allen Avenue, Ikeja, Lagos, Nigeria</p>
-            <p>+234 803 000 1122 &middot; info@carenexa.ng</p>
+            <p>+234 803 000 1122 &middot; info@carenexa.cloud</p>
           </div>
           <div className="flex gap-6">
             <Link href="/careers" className="hover:text-[var(--color-text)]">Careers</Link>

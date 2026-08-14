@@ -13,7 +13,7 @@ export function LoginForm() {
     <form action={formAction} className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
       <FormError>{state?.error}</FormError>
       <Field label="Email" htmlFor="email">
-        <Input id="email" name="email" type="email" autoComplete="username" required placeholder="you@carenexa.ng" />
+        <Input id="email" name="email" type="email" autoComplete="username" required placeholder="you@carenexa.cloud" />
       </Field>
       <Field label="Password" htmlFor="password">
         <Input id="password" name="password" type="password" autoComplete="current-password" required />

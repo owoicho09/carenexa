@@ -14,7 +14,7 @@ export function ForgotPasswordForm() {
       <form action={formAction} className="space-y-4 rounded-lg border border-[var(--color-border)] bg-[var(--color-surface)] p-6">
         <FormError>{state?.error}</FormError>
         <Field label="Email" htmlFor="email">
-          <Input id="email" name="email" type="email" required placeholder="you@carenexa.ng" />
+          <Input id="email" name="email" type="email" required placeholder="you@carenexa.cloud" />
         </Field>
         <Button type="submit" className="w-full" loading={pending}>
           {pending ? "Requesting…" : "Send reset link"}

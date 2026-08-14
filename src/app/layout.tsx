@@ -13,6 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
+  metadataBase: new URL("https://carenexa.cloud"),
   title: "CareNexa",
   description: "Hospital records, departments, and recruitment — one system.",
 };

@@ -10,6 +10,8 @@ export default defineConfig({
     seed: "npx tsx prisma/seed.ts",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // CLI-only (migrate/generate/db pull) — the transaction pooler DATABASE_URL that the
+    // app uses at runtime can't run migrations, so this reads the session-pooler DIRECT_URL.
+    url: process.env["DIRECT_URL"],
   },
 });

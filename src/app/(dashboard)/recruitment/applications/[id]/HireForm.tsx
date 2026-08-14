@@ -64,7 +64,7 @@ export function HireForm({
           <Input id="jobTitle" name="jobTitle" required placeholder="e.g. Medical Officer" />
         </Field>
         <Field label="Login email" htmlFor="email">
-          <Input id="email" name="email" type="email" required placeholder="firstname.lastname@carenexa.ng" />
+          <Input id="email" name="email" type="email" required placeholder="firstname.lastname@carenexa.cloud" />
         </Field>
       </div>
       <div className="flex justify-end">

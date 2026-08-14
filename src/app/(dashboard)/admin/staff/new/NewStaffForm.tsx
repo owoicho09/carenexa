@@ -39,7 +39,7 @@ export function NewStaffForm({ departments }: { departments: { id: string; name:
           <Input id="fullName" name="fullName" required />
         </Field>
         <Field label="Login email" htmlFor="email">
-          <Input id="email" name="email" type="email" required placeholder="firstname.lastname@carenexa.ng" />
+          <Input id="email" name="email" type="email" required placeholder="firstname.lastname@carenexa.cloud" />
         </Field>
         <Field label="Role" htmlFor="role">
           <Select id="role" name="role" required defaultValue="">
