@@ -7,7 +7,8 @@ import { requireSession } from "@/lib/auth";
 import { logAudit } from "@/lib/audit";
 import type { ReferralStatus, RequestUrgency } from "@/generated/prisma/enums";
 import type { Prisma } from "@/generated/prisma/client";
-import { allowedTransitions, STATUS_NEEDS_NOTE, validateEmergencySubmission } from "@/lib/referralRules";
+import { allowedTransitions, requiresConfirmedId, STATUS_NEEDS_NOTE, validateEmergencySubmission } from "@/lib/referralRules";
+import { careNexaIdMatches } from "@/lib/tenantAccess";
 import { issueHospitalNumber } from "@/lib/hospitalNumber";
 
 const SHARED_CATEGORIES = ["DEMOGRAPHICS", "VISITS", "VITALS", "LAB_RESULTS", "DIAGNOSES", "PRESCRIPTIONS", "CLINICAL_NOTES"];
@@ -296,6 +297,13 @@ export async function transitionReferralAction(_prev: ReferralActionState, formD
   const allowed: string[] = allowedTransitions({ isRecipient, status: referral.status, urgency: referral.urgency });
   if (!allowed.includes(nextStatus)) return { error: "That referral transition is not allowed from its current state." };
   if (STATUS_NEEDS_NOTE.includes(nextStatus) && !detail) return { error: "Add a note so the other hospital knows why." };
+  if (isRecipient && requiresConfirmedId(nextStatus, referral.urgency)) {
+    const confirmedLink = await db.patientHospitalLink.findFirst({ where: { identityId: referral.identityId, hospitalId: session.hospitalId, verificationStatus: "VERIFIED" } });
+    const confirmed = confirmedLink && await db.patientIdentityVerification.findFirst({
+      where: { identityId: referral.identityId, hospitalId: session.hospitalId, patientId: confirmedLink.patientId, status: "VERIFIED", revokedAt: null },
+    });
+    if (!confirmed) return { error: "Confirm the patient's CareNexa ID before accepting or treating them." };
+  }
   const appointmentScheduledFor = nextStatus === "APPOINTMENT_SCHEDULED" ? new Date(appointmentDateRaw) : undefined;
   if (nextStatus === "APPOINTMENT_SCHEDULED" && (!appointmentDateRaw || Number.isNaN(appointmentScheduledFor?.getTime()) || appointmentScheduledFor! <= new Date())) {
     return { error: "Choose a future appointment time." };
@@ -347,12 +355,18 @@ export async function verifyIncomingReferralIdentityAction(_prev: ReferralAction
   const session = await requireSession(["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST"]);
   const referralId = String(formData.get("referralId") ?? "");
   const patientId = String(formData.get("patientId") ?? "");
-  const evidenceReference = String(formData.get("evidenceReference") ?? "").trim();
-  if (!patientId || !evidenceReference) return { error: "Select the patient's local record and enter the in-person verification evidence reference." };
+  const careNexaId = String(formData.get("careNexaId") ?? "").trim();
+  const note = String(formData.get("evidenceReference") ?? "").trim();
+  if (!patientId || !careNexaId) return { error: "Enter the CareNexa ID from the patient's card." };
 
-  const referral = await db.referral.findFirst({ where: { id: referralId, destinationHospitalId: session.hospitalId } });
+  const referral = await db.referral.findFirst({ where: { id: referralId, destinationHospitalId: session.hospitalId }, include: { identity: true } });
   const patient = await db.patient.findFirst({ where: { id: patientId, hospitalId: session.hospitalId, isDeleted: false } });
   if (!referral || !patient) return { error: "Referral or patient record not found at this hospital." };
+  if (!careNexaIdMatches(careNexaId, referral.identity.universalPatientNumber)) {
+    await logAudit({ hospitalId: session.hospitalId, actorId: session.staffId, action: "CARENEXA_ID_MISMATCH", targetType: "Referral", targetId: referral.id });
+    return { error: "That CareNexa ID doesn't match this referral. Check the patient's card and try again." };
+  }
+  const evidenceReference = `CareNexa ID confirmed from patient's card${note ? ` · ${note}` : ""}`;
 
   const link = await db.patientHospitalLink.findFirst({ where: { identityId: referral.identityId, hospitalId: session.hospitalId, patientId } });
   if (!link) return { error: "This local patient record is not linked to the referral's CareNexa identity. Register or link the identity after checking the patient in person." };
@@ -377,7 +391,7 @@ export async function verifyIncomingReferralIdentityAction(_prev: ReferralAction
     }
     if (referral.status === "SUBMITTED") {
       await tx.referral.update({ where: { id: referral.id }, data: { status: "ACKNOWLEDGED" } });
-      await tx.referralEvent.create({ data: { referralId: referral.id, actorId: session.staffId, status: "ACKNOWLEDGED", detail: "Patient identity verified in person; referral acknowledged." } });
+      await tx.referralEvent.create({ data: { referralId: referral.id, actorId: session.staffId, status: "ACKNOWLEDGED", detail: "CareNexa ID confirmed; referral acknowledged." } });
     }
   });
 
@@ -393,13 +407,20 @@ export async function verifyIncomingReferralIdentityAction(_prev: ReferralAction
 export async function registerReferredPatientAction(_prev: ReferralActionState, formData: FormData): Promise<ReferralActionState> {
   const session = await requireSession(["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST"]);
   const referralId = String(formData.get("referralId") ?? "");
-  const evidenceReference = String(formData.get("evidenceReference") ?? "").trim();
-  if (!evidenceReference) return { error: "Record how the patient's identity was checked in person." };
+  const careNexaId = String(formData.get("careNexaId") ?? "").trim();
+  const note = String(formData.get("evidenceReference") ?? "").trim();
+  if (!careNexaId) return { error: "Enter the CareNexa ID from the patient's card." };
 
   const referral = await db.referral.findFirst({
     where: { id: referralId, destinationHospitalId: session.hospitalId, status: { notIn: ["DRAFT", "DECLINED", "REDIRECTED", "COMPLETED"] } },
+    include: { identity: true },
   });
   if (!referral) return { error: "Active incoming referral not found at this hospital." };
+  if (!careNexaIdMatches(careNexaId, referral.identity.universalPatientNumber)) {
+    await logAudit({ hospitalId: session.hospitalId, actorId: session.staffId, action: "CARENEXA_ID_MISMATCH", targetType: "Referral", targetId: referral.id });
+    return { error: "That CareNexa ID doesn't match this referral. Check the patient's card and try again." };
+  }
+  const evidenceReference = `CareNexa ID confirmed from patient's card${note ? ` · ${note}` : ""}`;
   if (await db.patientHospitalLink.findFirst({ where: { identityId: referral.identityId, hospitalId: session.hospitalId } })) {
     return { error: "This patient already has a record at this hospital." };
   }
@@ -462,7 +483,7 @@ export async function registerReferredPatientAction(_prev: ReferralActionState, 
     if (referral.status === "SUBMITTED") {
       await tx.referral.update({ where: { id: referral.id }, data: { status: "ACKNOWLEDGED" } });
       await tx.referralEvent.create({
-        data: { referralId: referral.id, actorId: session.staffId, status: "ACKNOWLEDGED", detail: `Registered at this hospital as ${hospitalNumber}; identity verified in person.` },
+        data: { referralId: referral.id, actorId: session.staffId, status: "ACKNOWLEDGED", detail: `CareNexa ID confirmed; registered at this hospital as ${hospitalNumber}.` },
       });
     }
     return created;

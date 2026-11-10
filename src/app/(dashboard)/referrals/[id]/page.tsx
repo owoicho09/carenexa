@@ -6,11 +6,11 @@ import { PageHeader, Panel, PanelHeader } from "@/components/ui/Panel";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import { logAudit } from "@/lib/audit";
-import { canReadSharedPatientRecords } from "@/lib/tenantAccess";
+import { canReadSharedPatientRecords, maskCareNexaId } from "@/lib/tenantAccess";
 import { endEmergencyAccessAction, revokePatientAccessGrantAction } from "../actions";
 import { CounterReferralForm, EmergencyAccessForm, EmergencySubmitForm, IncomingIdentityForm, IncorporateCounterReferralForm, ReferralConsentForm, ReferralNextSteps, RegisterReferredPatientForm, RetrospectiveAuthorizationForm } from "@/components/referrals/ReferralWorkflowForms";
 import { IdentityVerificationForm } from "@/components/patient/IdentityVerificationForm";
-import { allowedTransitions, isClosedWithoutCare, progressState } from "@/lib/referralRules";
+import { allowedTransitions, isClosedWithoutCare, progressState, requiresConfirmedId, type ReferralStatusValue } from "@/lib/referralRules";
 import { SharedClinicalSummary } from "@/components/referrals/SharedClinicalSummary";
 
 export default async function ReferralDetailPage({ params }: { params: Promise<{ id: string }> }) {
@@ -110,7 +110,15 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
   const sharedDemographics = !isSource && inboundGrant?.recordCategories.includes("DEMOGRAPHICS") && info.patient && typeof info.patient === "object"
     ? info.patient as { fullName?: string; dateOfBirth?: string; sex?: string; phone?: string }
     : null;
-  const nextStatuses: string[] = allowedTransitions({ isRecipient: !isSource, status: referral.status, urgency: referral.urgency });
+  const idConfirmedHere = Boolean(localVerification);
+  const allNextStatuses: ReferralStatusValue[] = allowedTransitions({ isRecipient: !isSource, status: referral.status, urgency: referral.urgency });
+  // Until the receiving hospital confirms the CareNexa ID, only paperwork steps
+  // are offered; accept/check-in/treat unlock afterwards (server enforces too).
+  const nextStatuses: string[] = !isSource && !idConfirmedHere
+    ? allNextStatuses.filter((s) => !requiresConfirmedId(s, referral.urgency))
+    : allNextStatuses;
+  const lockedUntilId = !isSource && !idConfirmedHere && allNextStatuses.some((s) => requiresConfirmedId(s, referral.urgency));
+  const shownCareNexaId = isSource || idConfirmedHere ? referral.identity.universalPatientNumber : maskCareNexaId(referral.identity.universalPatientNumber);
   const emergencyInfo = info.emergency && typeof info.emergency === "object" ? info.emergency as { justification?: string; patientAuthorization?: string } : null;
   const authorizationPending = emergencyInfo?.patientAuthorization === "PENDING";
   const referralClosed = ["DRAFT", "DECLINED", "COMPLETED"].includes(referral.status);
@@ -140,7 +148,7 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
 
   return (
     <div className="mx-auto w-full max-w-5xl space-y-6 p-6">
-      <PageHeader title={referral.requestedService} description={`${referral.sourceHospital.name} → ${referral.destinationHospital.name}`} />
+      <PageHeader title={referral.requestedService} description={`Referrer: ${referral.sourceHospital.name} → Receiving hospital: ${referral.destinationHospital.name}`} />
 
       <Panel className="p-5">
         <ol className="grid grid-cols-4 gap-y-3 sm:grid-cols-8" aria-label="Referral progress">
@@ -166,11 +174,12 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
       </Panel>
 
       <Panel>
-        <PanelHeader title="Referral details" description="Referral metadata does not grant access to the patient's full record." />
+        <PanelHeader title="Referral details" description="These details alone don't open the patient's records." />
         <div className="grid gap-4 p-5 sm:grid-cols-2">
-          <div><p className="text-xs text-[var(--color-text-faint)]">CareNexa identity</p><p className="font-mono text-sm">{referral.identity.universalPatientNumber}</p></div>
+          <div><p className="text-xs text-[var(--color-text-faint)]">CareNexa identity</p><p className="font-mono text-sm">{shownCareNexaId}</p>{!isSource && !idConfirmedHere && <p className="text-[11px] text-[var(--color-text-faint)]">Hidden until confirmed from the patient&rsquo;s card</p>}</div>
           <div><p className="text-xs text-[var(--color-text-faint)]">Status</p><Badge tone={referral.status === "COMPLETED" ? "success" : "brand"}>{referral.status.replaceAll("_", " ")}</Badge></div>
-          <div><p className="text-xs text-[var(--color-text-faint)]">Referring clinician</p><p className="text-sm">{referral.referringStaff.fullName}</p></div>
+          <div><p className="text-xs text-[var(--color-text-faint)]">Referrer</p><p className="text-sm">{referral.sourceHospital.name} · {referral.referringStaff.fullName}</p></div>
+          <div><p className="text-xs text-[var(--color-text-faint)]">Receiving hospital</p><p className="text-sm">{referral.destinationHospital.name}</p></div>
           <div><p className="text-xs text-[var(--color-text-faint)]">Urgency</p><p className="text-sm">{referral.urgency}</p></div>
           <div className="sm:col-span-2"><p className="text-xs text-[var(--color-text-faint)]">Reason</p><p className="text-sm">{referral.reason}</p></div>
         </div>
@@ -182,7 +191,7 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
           {emergencyInfo.justification && <p className="mt-1">{emergencyInfo.justification}</p>}
           <p className="mt-1 text-xs">
             {authorizationPending
-              ? "No clinical content was shared. The receiving hospital may open time-limited, audited emergency access; the referring hospital must record patient authorization once obtainable."
+              ? "No clinical content was shared. The receiving hospital may open time-limited, audited emergency access; the referrer must record patient authorization once obtainable."
               : "Patient authorization has since been recorded."}
           </p>
         </div>
@@ -222,9 +231,9 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
 
       {!isSource && !localLink && !closedWithoutCare && referral.status !== "COMPLETED" && (
         <Panel className="border-l-4 border-l-[var(--color-brand)] p-5">
-          <h2 className="mb-1 text-sm font-semibold">Register the patient at this hospital</h2>
+          <h2 className="mb-1 text-sm font-semibold">Confirm the patient&rsquo;s CareNexa ID</h2>
           <p className="mb-4 text-sm text-[var(--color-text-muted)]">
-            This patient has no record here yet. Check their identity in person, then create this hospital&rsquo;s own record, linked to the same CareNexa ID.
+            This patient has no record here yet. Enter the CareNexa ID from their card: if it matches the referral, CareNexa creates this hospital&rsquo;s own record for them and unlocks acceptance.
           </p>
           <RegisterReferredPatientForm referralId={referral.id} shared={sharedDemographics} />
         </Panel>
@@ -232,8 +241,8 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
 
       {!isSource && localLink && !localVerification && (
         <Panel className="p-5">
-          <h2 className="mb-1 text-sm font-semibold">Verify patient identity in person</h2>
-          <p className="mb-4 text-sm text-[var(--color-text-muted)]">This patient already has a record here ({localLink.patient.hospitalNumber}). Confirm in person that it is them.</p>
+          <h2 className="mb-1 text-sm font-semibold">Confirm the patient&rsquo;s CareNexa ID</h2>
+          <p className="mb-4 text-sm text-[var(--color-text-muted)]">This patient already has a record here ({localLink.patient.hospitalNumber}). Enter the CareNexa ID from their card to confirm it is them and unlock acceptance.</p>
           <IncomingIdentityForm referralId={referral.id} linkedPatientId={localLink.patientId} localPatients={[localLink.patient]} />
         </Panel>
       )}
@@ -247,7 +256,7 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
               <Link href={`/patients/${localLink.patientId}`} className="font-medium text-[var(--color-brand)] hover:underline">
                 Open the local patient record
               </Link>
-              <span className="text-[var(--color-text-muted)]"> to see the source hospital&rsquo;s records this access covers.</span>
+              <span className="text-[var(--color-text-muted)]"> to see the referrer&rsquo;s records this access covers.</span>
             </p>
           )}
           <SharedClinicalSummary information={info} />
@@ -283,9 +292,14 @@ export default async function ReferralDetailPage({ params }: { params: Promise<{
         </form>
       )}
 
-      {nextStatuses.length > 0 && (
+      {(nextStatuses.length > 0 || lockedUntilId) && (
         <Panel className="p-5">
           <h2 className="mb-3 text-sm font-semibold">Next step</h2>
+          {lockedUntilId && (
+            <p className="mb-3 rounded-md bg-[var(--color-warning-soft)] px-3 py-2 text-sm text-[var(--color-text)]">
+              Accepting the referral unlocks once the patient&rsquo;s CareNexa ID is confirmed above.
+            </p>
+          )}
           <ReferralNextSteps referralId={referral.id} statuses={nextStatuses} />
         </Panel>
       )}

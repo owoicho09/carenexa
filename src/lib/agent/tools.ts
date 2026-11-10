@@ -109,6 +109,47 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     mutating: false,
+    allowedRoles: "all",
+    definition: {
+      name: "get_todays_activity",
+      description: "Summarise today's activity at the signed-in hospital: visits, new patients, department requests, lab results, referrals and billing. Use when asked for today's summary, activity or overview.",
+      input_schema: { type: "object", properties: {} },
+    },
+    run: async (session) => {
+      const hospitalId = session.hospitalId;
+      const since = new Date();
+      since.setHours(0, 0, 0, 0);
+      const today = { gte: since };
+      const [hospital, visitsOpened, inHospitalNow, newPatients, requestsSent, requestsDone, waiting, labResults, referralsOut, referralsIn, billsCreated, collected] = await Promise.all([
+        db.hospital.findUnique({ where: { id: hospitalId }, select: { name: true } }),
+        db.visit.count({ where: { hospitalId, openedAt: today } }),
+        db.visit.count({ where: { hospitalId, status: "OPEN" } }),
+        db.patient.count({ where: { hospitalId, registeredAt: today, isDeleted: false } }),
+        db.request.count({ where: { hospitalId, createdAt: today } }),
+        db.request.count({ where: { hospitalId, completedAt: today } }),
+        db.request.count({ where: { hospitalId, status: { in: ["PENDING", "QUERIED"] } } }),
+        db.labResult.count({ where: { enteredAt: today, visit: { hospitalId } } }),
+        db.referral.count({ where: { sourceHospitalId: hospitalId, submittedAt: today } }),
+        db.referral.count({ where: { destinationHospitalId: hospitalId, submittedAt: today } }),
+        db.invoice.count({ where: { hospitalId, createdAt: today } }),
+        db.payment.aggregate({ where: { invoice: { hospitalId }, receivedAt: today }, _sum: { amountKobo: true } }),
+      ]);
+      const naira = `₦${((collected._sum.amountKobo ?? 0) / 100).toLocaleString("en-NG")}`;
+      return {
+        ok: true,
+        message: [
+          `Today at ${hospital?.name ?? "this hospital"}:`,
+          `${visitsOpened} visits opened, ${inHospitalNow} patients in the hospital now, ${newPatients} new patients registered.`,
+          `${requestsSent} department requests sent, ${requestsDone} completed, ${waiting} still waiting.`,
+          `${labResults} lab results recorded.`,
+          `${referralsOut} referrals sent, ${referralsIn} received.`,
+          `${billsCreated} bills created, ${naira} collected.`,
+        ].join("\n"),
+      };
+    },
+  },
+  {
+    mutating: false,
     allowedRoles: ALL_CLINICAL_ROLES,
     definition: {
       name: "get_patient_summary",
@@ -304,7 +345,7 @@ export const TOOLS: ToolSpec[] = [
     },
     describe: async (session, input) => {
       const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
-      const dept = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId } });
+      const dept = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId, isArchived: false } });
       return `Send ${patient?.fullName ?? "this patient"} to ${dept?.name ?? str(input, "toDepartmentSlug")} for "${str(input, "requestType")}" — ${str(input, "reason")}.`;
     },
     run: async (session, input) => {
@@ -312,7 +353,7 @@ export const TOOLS: ToolSpec[] = [
       const patientId = str(input, "patientId");
       const visit = await findOpenVisit(patientId, session.hospitalId);
       if (!visit) return { ok: false, error: "This patient has no open visit." };
-      const toDepartment = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId } });
+      const toDepartment = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId, isArchived: false } });
       if (!toDepartment) return { ok: false, error: `No department with slug "${str(input, "toDepartmentSlug")}".` };
 
       await createRequest({

@@ -70,10 +70,13 @@ export function IncomingIdentityForm({
           {localPatients.map((patient) => <option key={patient.id} value={patient.id}>{patient.fullName} · {patient.hospitalNumber}</option>)}
         </Select>
       </Field>
-      <Field label="In-person verification evidence reference" htmlFor="evidenceReference">
-        <Input id="evidenceReference" name="evidenceReference" required placeholder="Verification record reference" />
+      <Field label="CareNexa ID from the patient's card" htmlFor="verifyCareNexaId" hint="Ask the patient for their CareNexa card and type the ID exactly as printed, e.g. CNX-7F2A91C3.">
+        <Input id="verifyCareNexaId" name="careNexaId" required autoComplete="off" spellCheck={false} placeholder="CNX-…" className="font-mono uppercase" />
       </Field>
-      <div className="flex justify-end"><Button type="submit" variant="secondary" size="sm" loading={pending}>Verify and acknowledge</Button></div>
+      <Field label="Note (optional)" htmlFor="evidenceReference">
+        <Input id="evidenceReference" name="evidenceReference" placeholder="e.g. National ID also sighted" />
+      </Field>
+      <div className="flex justify-end"><Button type="submit" size="sm" loading={pending}>Confirm ID and acknowledge</Button></div>
     </form>
   );
 }
@@ -141,7 +144,7 @@ export function RegisterReferredPatientForm({ referralId, shared }: { referralId
           <p className="font-medium text-[var(--color-text)]">{shared!.fullName}</p>
           <p className="text-xs text-[var(--color-text-muted)]">
             {shared!.sex === "MALE" ? "Male" : "Female"} · born {new Date(shared!.dateOfBirth!).toLocaleDateString("en-NG")}
-            {shared!.phone ? ` · ${shared!.phone}` : ""} · shared by the referring hospital with the patient&rsquo;s consent
+            {shared!.phone ? ` · ${shared!.phone}` : ""} · shared by the referrer with the patient&rsquo;s consent
           </p>
         </div>
       ) : (
@@ -157,11 +160,14 @@ export function RegisterReferredPatientForm({ referralId, shared }: { referralId
           </Field>
         </div>
       )}
-      <Field label="How was identity checked in person?" htmlFor="regEvidence" hint="e.g. 'National ID card sighted' or 'Hospital card from referring hospital'.">
-        <Input id="regEvidence" name="evidenceReference" required placeholder="Identity document sighted" />
+      <Field label="CareNexa ID from the patient's card" htmlFor="regCareNexaId" hint="Ask the patient for their CareNexa card and type the ID exactly as printed, e.g. CNX-7F2A91C3.">
+        <Input id="regCareNexaId" name="careNexaId" required autoComplete="off" spellCheck={false} placeholder="CNX-…" className="font-mono uppercase" />
+      </Field>
+      <Field label="Note (optional)" htmlFor="regEvidence">
+        <Input id="regEvidence" name="evidenceReference" placeholder="e.g. National ID also sighted" />
       </Field>
       <div className="flex justify-end">
-        <Button type="submit" size="sm" loading={pending}>Register patient at this hospital</Button>
+        <Button type="submit" size="sm" loading={pending}>Confirm ID and register patient</Button>
       </div>
     </form>
   );

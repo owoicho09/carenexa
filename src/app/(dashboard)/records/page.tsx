@@ -46,14 +46,17 @@ export default async function RecordsPage({
   });
 
   const departments = await db.department.findMany({
-    where: { hospitalId: session.hospitalId, acceptsRequestTypes: { isEmpty: false } },
+    where: { hospitalId: session.hospitalId, isArchived: false, acceptsRequestTypes: { isEmpty: false } },
     orderBy: { name: "asc" },
   });
+  const fromOptions = session.departmentId
+    ? null
+    : await db.department.findMany({ where: { hospitalId: session.hospitalId, isArchived: false }, select: { id: true, name: true, slug: true }, orderBy: { name: "asc" } });
 
   return (
     <div className="space-y-6">
       <PageHeader title="Records" description="Find an existing patient, register a new one, or act on one right now." />
-      <QuickActionsBar departments={departments} />
+      <QuickActionsBar departments={departments} fromOptions={fromOptions} />
 
       <Panel className="p-4">
         <form className="flex gap-2">

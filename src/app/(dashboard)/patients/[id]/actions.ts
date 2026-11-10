@@ -17,28 +17,40 @@ export async function sendToDepartmentAction(
 ): Promise<SendToDepartmentState> {
   const session = await requireSession();
 
-  const visitId = String(formData.get("visitId") ?? "");
+  const visitIdInput = String(formData.get("visitId") ?? "");
+  const patientId = String(formData.get("patientId") ?? "");
   const toDepartmentId = String(formData.get("toDepartmentId") ?? "");
   const requestType = String(formData.get("requestType") ?? "").trim();
   const reason = String(formData.get("reason") ?? "").trim();
   const urgency = String(formData.get("urgency") ?? "ROUTINE") as RequestUrgency;
 
-  if (!visitId || !toDepartmentId || !requestType || !reason) {
-    return { error: "Choose a department, request type, and reason before sending." };
+  if (!toDepartmentId || !requestType || !reason) {
+    return { error: "Choose a department, what's needed, and a reason before sending." };
   }
 
-  const visit = await db.visit.findFirst({ where: { id: visitId, hospitalId: session.hospitalId } });
-  if (!visit || visit.status !== "OPEN") {
-    return { error: "This visit is closed and can no longer receive requests." };
-  }
-
-  const toDepartment = await db.department.findFirst({ where: { id: toDepartmentId, hospitalId: session.hospitalId } });
+  const toDepartment = await db.department.findFirst({ where: { id: toDepartmentId, hospitalId: session.hospitalId, isArchived: false } });
   if (!toDepartment) return { error: "Choose a department in this hospital." };
 
-  const fromDepartmentId = session.departmentId;
-  if (!fromDepartmentId) {
-    return { error: "Your account has no department assigned, so it can't send requests." };
+  // Staff send from their own department. Accounts without one (hospital or
+  // platform administrators) choose which department they are acting for.
+  const chosenFrom = String(formData.get("fromDepartmentId") ?? "");
+  const fromDepartmentId = session.departmentId ?? chosenFrom;
+  if (!fromDepartmentId || !(await db.department.findFirst({ where: { id: fromDepartmentId, hospitalId: session.hospitalId } }))) {
+    return { error: "Choose which department you are sending from." };
   }
+  if (fromDepartmentId === toDepartmentId) return { error: "Choose a different department to send the patient to." };
+
+  // Use the open visit, or start one: sending a patient somewhere means they are here today.
+  let visit = visitIdInput
+    ? await db.visit.findFirst({ where: { id: visitIdInput, hospitalId: session.hospitalId } })
+    : await db.visit.findFirst({ where: { patientId, hospitalId: session.hospitalId, status: "OPEN" } });
+  if (visit && visit.status !== "OPEN") return { error: "This visit is closed and can no longer receive requests." };
+  if (!visit) {
+    const patient = await db.patient.findFirst({ where: { id: patientId, hospitalId: session.hospitalId, isDeleted: false } });
+    if (!patient) return { error: "Patient not found in this hospital." };
+    visit = await db.visit.create({ data: { hospitalId: session.hospitalId, patientId: patient.id, openedById: session.staffId, presentingComplaint: reason } });
+  }
+  const visitId = visit.id;
 
   await createRequest({
     hospitalId: session.hospitalId,

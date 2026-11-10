@@ -77,8 +77,8 @@ const TECHNOLOGY: { title: string; body: string; status: "live" | "roadmap" }[] 
 const STEPS = [
   { title: "Register once", body: "The patient is registered at their hospital and receives a CareNexa ID. Identity is checked in person." },
   { title: "Refer with consent", body: "The clinician refers to another CareNexa hospital. The patient chooses which records travel with them." },
-  { title: "Receive and treat", body: "The receiving hospital registers the patient, accepts and confirms check-in — the referring hospital sees each step." },
-  { title: "Report comes home", body: "On discharge, the care report returns to the referring hospital and is stored on the patient's record." },
+  { title: "Receive and treat", body: "The receiving hospital registers the patient, accepts and confirms check-in — the referrer sees each step." },
+  { title: "Report comes home", body: "On discharge, the care report returns to the referrer and is stored on the patient's record." },
 ];
 
 const TRUST = [

@@ -112,3 +112,14 @@ export function progressState(eventStatuses: string[]) {
 export function isClosedWithoutCare(eventStatuses: string[]) {
   return eventStatuses.includes("DECLINED") || eventStatuses.includes("REDIRECTED");
 }
+
+// Steps the receiving hospital can take before confirming the patient's
+// CareNexa ID: acknowledging, reviewing the paperwork, or sending it back.
+const ALLOWED_BEFORE_ID_CONFIRMED: ReferralStatusValue[] = ["ACKNOWLEDGED", "UNDER_REVIEW", "MORE_INFORMATION_REQUESTED", "DECLINED", "REDIRECTED"];
+
+// Accepting, scheduling, checking in and treating require the patient's
+// CareNexa ID to be confirmed first — except in an emergency, where care must
+// not wait on administrative steps.
+export function requiresConfirmedId(nextStatus: ReferralStatusValue, urgency: UrgencyValue) {
+  return urgency !== "EMERGENCY" && !ALLOWED_BEFORE_ID_CONFIRMED.includes(nextStatus);
+}

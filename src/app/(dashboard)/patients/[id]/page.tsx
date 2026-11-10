@@ -24,7 +24,9 @@ import { ClinicalInsightsPanel } from "@/components/ai/ClinicalInsightsPanel";
 import { isAiConfigured, isOpenAiConfigured } from "@/lib/ai/client";
 import { getLatestHistorySummary } from "@/lib/ai/summary";
 import { loadSharedRecordsForPatient, type SharedRecord } from "@/lib/ai/clinicalInsights";
-import { CLINICAL_RULES_VERSION, deterministicFlags, describeDataGaps, type CoverageSource } from "@/lib/clinicalRules";
+import { deterministicFlags, describeDataGaps, type CoverageSource } from "@/lib/clinicalRules";
+import { billTotals, formatNaira } from "@/lib/billing";
+import { BILL_STATUS_LABEL } from "@/lib/billingStatus";
 
 function formatAge(dateOfBirth: Date) {
   const ms = Date.now() - dateOfBirth.getTime();
@@ -87,7 +89,7 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
         },
       },
     }),
-    db.department.findMany({ where: { hospitalId, acceptsRequestTypes: { isEmpty: false } }, orderBy: { name: "asc" } }),
+    db.department.findMany({ where: { hospitalId, isArchived: false, acceptsRequestTypes: { isEmpty: false } }, orderBy: { name: "asc" } }),
     db.appointment.findMany({ where: { hospitalId, patientId: id, status: "SCHEDULED" }, orderBy: { scheduledFor: "asc" } }),
     db.communication.findMany({ where: { hospitalId, patientId: id }, include: { sentBy: true }, orderBy: { sentAt: "desc" } }),
     db.patientHospitalLink.findFirst({ where: { patientId: id, hospitalId }, include: { identity: true } }),
@@ -137,6 +139,14 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
       : Promise.resolve([]),
   ]);
 
+  const canBill = session.role === "ADMIN";
+  const bills = canBill
+    ? await db.invoice.findMany({ where: { hospitalId, patientId: id }, include: { items: true, payments: true }, orderBy: { createdAt: "desc" }, take: 5 })
+    : [];
+  const owed = bills.filter((b) => b.status !== "VOID").reduce((sum, b) => sum + billTotals(b.items, b.payments).balance, 0);
+  const fromOptions = session.departmentId
+    ? null
+    : await db.department.findMany({ where: { hospitalId, isArchived: false }, select: { id: true, name: true, slug: true }, orderBy: { name: "asc" } });
   const hasDangerInfo = patient.allergies.length > 0 || patient.genotype === "SS" || patient.genotype === "SC";
   const openVisit = patient.visits.find((v) => v.status === "OPEN");
   const referralVisitId = openVisit?.id ?? patient.visits[0]?.id ?? "";
@@ -262,7 +272,6 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
           canReview={canReviewInsights}
           insights={insights}
           ruleFlags={ruleFlags}
-          rulesVersion={CLINICAL_RULES_VERSION}
           dataGaps={dataGaps}
         />
       </Panel>
@@ -353,7 +362,7 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
                       <div className="min-w-0">
                         <p className="font-medium text-[var(--color-text)]">{r.requestedService}</p>
                         <p className="text-xs text-[var(--color-text-muted)]">
-                          {r.sourceHospitalId === hospitalId ? `Outgoing to ${r.destinationHospital.name}` : `Incoming from ${r.sourceHospital.name}`} &middot; {r.createdAt.toLocaleDateString("en-NG")}
+                          {r.sourceHospitalId === hospitalId ? `Referred to ${r.destinationHospital.name}` : `Referred here by ${r.sourceHospital.name} (referrer)`} &middot; {r.createdAt.toLocaleDateString("en-NG")}
                         </p>
                       </div>
                       <span className="flex flex-wrap items-center gap-1.5">
@@ -383,6 +392,35 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
             </Panel>
           )}
         </div>
+      )}
+
+      {canBill && !patient.isDeleted && (
+        <Panel className="p-5">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Billing</h2>
+              <p className="mt-0.5 text-sm text-[var(--color-text-muted)]">
+                {owed > 0 ? <>Balance owed <span className="font-semibold text-[var(--color-danger)]">{formatNaira(owed)}</span></> : bills.length ? "No balance owed." : "No bills yet."}
+              </p>
+            </div>
+            <LinkButton href={`/admin/billing?patient=${patient.id}`} variant="secondary" size="sm">New bill</LinkButton>
+          </div>
+          {bills.length > 0 && (
+            <ul className="mt-3 divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+              {bills.map((b) => (
+                <li key={b.id}>
+                  <Link href={`/admin/billing/${b.id}`} className="flex items-center justify-between gap-2 px-3 py-2 text-sm hover:bg-[var(--color-page)]">
+                    <span className="text-[var(--color-text)]">{b.number} · {b.createdAt.toLocaleDateString("en-NG")}</span>
+                    <span className="flex items-center gap-2">
+                      {formatNaira(billTotals(b.items, b.payments).total)}
+                      <Badge tone={BILL_STATUS_LABEL[b.status].tone}>{BILL_STATUS_LABEL[b.status].label}</Badge>
+                    </span>
+                  </Link>
+                </li>
+              ))}
+            </ul>
+          )}
+        </Panel>
       )}
 
       {appointments.length > 0 && (
@@ -433,20 +471,23 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
         </Panel>
       )}
 
-      {/* Where the patient goes next — any department to any department */}
-      {openVisit && (
+      {/* Where the patient goes next — e.g. doctor → laboratory → back to doctor → administration */}
+      {!patient.isDeleted && (
         <div className="grid gap-4 sm:grid-cols-2">
           <Panel className="p-5">
-            <h2 className="mb-4 text-sm font-semibold text-[var(--color-text)]">Send to department</h2>
-            <SendToDepartmentForm visitId={openVisit.id} departments={departments} />
+            <h2 className="text-sm font-semibold text-[var(--color-text)]">Send to department</h2>
+            <p className="mb-4 mt-1 text-xs text-[var(--color-text-muted)]">
+              {openVisit ? "Route the patient to the next department." : "No open visit — sending the patient starts one for today."}
+            </p>
+            <SendToDepartmentForm visitId={openVisit?.id ?? null} patientId={patient.id} departments={departments} fromOptions={fromOptions} />
           </Panel>
-          <Panel className="p-5">
+          {openVisit && <Panel className="p-5">
             <h2 className="mb-4 text-sm font-semibold text-[var(--color-text)]">Close visit</h2>
             <p className="mb-4 text-sm text-[var(--color-text-muted)]">
               Ends the patient&rsquo;s presence today. The record stays permanent either way.
             </p>
             <CloseVisitForm visitId={openVisit.id} />
-          </Panel>
+          </Panel>}
         </div>
       )}
 

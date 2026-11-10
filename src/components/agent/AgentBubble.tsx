@@ -196,17 +196,9 @@ export function AgentBubble() {
 
           <div ref={scrollRef} className="flex-1 space-y-3 overflow-y-auto p-3">
             {turns.length === 0 && !loading && (
-              <div className="space-y-2 text-sm text-[var(--color-text-muted)]">
-                <p>
-                  Hi, I&rsquo;m your CareNexa assistant. Ask me to find a patient, pull up your queue, or
-                  summarise a visit history — or ask me to take an action, like sending a patient to a
-                  department or logging vitals.
-                </p>
-                <p>
-                  Anything that would change a record, I&rsquo;ll propose first and wait for your go-ahead
-                  before it actually happens.
-                </p>
-              </div>
+              <p className="text-sm text-[var(--color-text-muted)]">
+                Hi, I&rsquo;m your CareNexa AI assistant. What would you like to do — find a patient record, or get a summary of today&rsquo;s activity?
+              </p>
             )}
             {turns.map((t, i) => (
               <div

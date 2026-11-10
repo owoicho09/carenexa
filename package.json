@@ -11,6 +11,7 @@
     "db:migrate": "prisma migrate dev",
     "db:seed": "tsx prisma/seed.ts",
     "test": "node --test tests/*.test.mjs",
+    "demo:streamline": "tsx prisma/scripts/streamline-departments.ts",
     "test:integration": "tsx --conditions=react-server --test tests/integration/*.test.ts"
   },
   "dependencies": {

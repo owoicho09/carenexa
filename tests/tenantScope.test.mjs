@@ -18,7 +18,7 @@ const HOSPITAL_OWNED = [
   "patient", "visit", "appointment", "communication", "request", "notification", "auditLog",
   "aiArtifact", "vacancy", "candidate", "application", "department", "cardType", "clinicalInsight",
   "rolePermission", "staffMember", "referral", "patientAccessGrant", "emergencyAccessEvent",
-  "patientHospitalLink", "patientIdentityVerification",
+  "patientHospitalLink", "patientIdentityVerification", "invoice", "payment",
 ];
 const CHECKED_OPS = ["findMany", "findFirst", "findFirstOrThrow", "findUnique", "findUniqueOrThrow", "count", "aggregate", "groupBy", "updateMany", "deleteMany"];
 const SCOPE_KEYS = /\b(hospitalId|sourceHospitalId|destinationHospitalId|receivingHospitalId|accessingHospitalId)\b/;

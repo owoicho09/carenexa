@@ -35,10 +35,10 @@ type RuleFlag = {
 };
 
 const TYPE_LABEL: Record<string, string> = {
-  RISK_ASSESSMENT: "Risk assessment",
-  PATTERN_DETECTION: "Pattern detection",
-  CLINICAL_INSIGHT: "Clinical insight",
-  LONGITUDINAL_SUMMARY: "Longitudinal summary",
+  CLINICAL_INSIGHT: "Anything to note",
+  RISK_ASSESSMENT: "Possible risks",
+  PATTERN_DETECTION: "Patterns over time",
+  LONGITUDINAL_SUMMARY: "Full history summary",
 };
 
 function when(iso: string | Date) {
@@ -51,7 +51,6 @@ export function ClinicalInsightsPanel({
   canReview,
   insights,
   ruleFlags,
-  rulesVersion,
   dataGaps,
 }: {
   patientId: string;
@@ -59,7 +58,6 @@ export function ClinicalInsightsPanel({
   canReview: boolean;
   insights: Insight[];
   ruleFlags: RuleFlag[];
-  rulesVersion: string;
   dataGaps: string[];
 }) {
   const [state, formAction, pending] = useActionState(generateClinicalInsightsAction, undefined);
@@ -67,21 +65,21 @@ export function ClinicalInsightsPanel({
   return (
     <section className="space-y-5 border-t border-[var(--color-border)] pt-4">
       <div>
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Clinical intelligence</h2>
+        <h2 className="text-sm font-semibold text-[var(--color-text)]">Clinical insights</h2>
         <p className="mt-1 text-xs text-[var(--color-text-muted)]">
-          Assistive only. Nothing here is a diagnosis or an order, and nothing is added to the record without a clinician acting on it.
+          Things worth a second look in this patient&rsquo;s records. Suggestions only — nothing here changes the record.
         </p>
       </div>
 
       {/* Deterministic, record-derived flags — not AI */}
       <div>
         <div className="mb-2 flex flex-wrap items-center gap-2">
-          <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Rule-based flags</h3>
-          <Badge tone="neutral">Deterministic · {rulesVersion}</Badge>
+          <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Flags from the record</h3>
+          <Badge tone="neutral">Automatic</Badge>
         </div>
-        <p className="mb-2 text-xs text-[var(--color-text-muted)]">Restate recorded data at this hospital. Abnormality uses each laboratory&rsquo;s own reference range.</p>
+        <p className="mb-2 text-xs text-[var(--color-text-muted)]">Picked out automatically: allergies, abnormal results and missed follow-ups.</p>
         {ruleFlags.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No rule-based flags.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Nothing flagged.</p>
         ) : (
           <ul className="space-y-1.5">
             {ruleFlags.map((flag) => (
@@ -103,8 +101,8 @@ export function ClinicalInsightsPanel({
       <div>
         <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
           <div className="flex flex-wrap items-center gap-2">
-            <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">AI observations</h3>
-            <Badge tone="warning">AI-generated suggestion</Badge>
+            <h3 className="text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">AI suggestions</h3>
+            <Badge tone="warning">Check before acting</Badge>
           </div>
           {aiConfigured && (
             <form action={formAction} className="flex flex-wrap items-center gap-2">
@@ -113,18 +111,18 @@ export function ClinicalInsightsPanel({
                 {Object.entries(TYPE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </Select>
               <Button type="submit" variant="secondary" size="sm" loading={pending}>
-                {pending ? "Analyzing…" : "Generate insights"}
+                {pending ? "Looking…" : "Ask AI"}
               </Button>
             </form>
           )}
         </div>
 
-        {!aiConfigured && <p className="text-sm text-[var(--color-text-muted)]">OpenAI clinical insights are not configured.</p>}
+        {!aiConfigured && <p className="text-sm text-[var(--color-text-muted)]">AI suggestions aren&rsquo;t switched on yet.</p>}
         <FormError>{state?.error}</FormError>
-        {state?.generated && <p role="status" className="text-sm text-[var(--color-success)]">Analysis complete. Review each observation and its evidence.</p>}
+        {state?.generated && <p role="status" className="text-sm text-[var(--color-success)]">Done. Each suggestion shows the records it is based on.</p>}
 
         {insights.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">No AI observations have been generated.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Choose what to look for and press Ask AI.</p>
         ) : (
           <ul className="space-y-3">
             {insights.map((insight) => {
@@ -142,7 +140,7 @@ export function ClinicalInsightsPanel({
                   </div>
                   <p className="mt-2 text-sm text-[var(--color-text-muted)]">{insight.summary}</p>
                   <div className="mt-3 border-t border-[var(--color-border)] pt-2">
-                    <p className="text-xs font-medium text-[var(--color-text-muted)]">Evidence</p>
+                    <p className="text-xs font-medium text-[var(--color-text-muted)]">Based on</p>
                     <ul className="mt-1 space-y-1">
                       {evidence.map((item) => (
                         <li key={`${item.recordId}-${item.recordedAt}`} className="text-xs text-[var(--color-text-muted)]">
@@ -152,7 +150,7 @@ export function ClinicalInsightsPanel({
                     </ul>
                   </div>
                   <div className="mt-2 flex flex-wrap items-center justify-between gap-2">
-                    <p className="text-[11px] text-[var(--color-text-faint)]">{insight.provider} · {insight.model} · {insight.promptVersion}</p>
+                    <span />
                     {canReview && insight.requiresReview && (
                       <form action={reviewClinicalInsightAction}>
                         <input type="hidden" name="insightId" value={insight.id} />
@@ -169,7 +167,7 @@ export function ClinicalInsightsPanel({
 
       {/* What the analysis could not see */}
       <div>
-        <h3 className="mb-1.5 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Data coverage and gaps</h3>
+        <h3 className="mb-1.5 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Not included</h3>
         <ul className="list-disc space-y-0.5 pl-5 text-xs text-[var(--color-text-muted)]">
           {dataGaps.map((gap) => <li key={gap}>{gap}</li>)}
         </ul>

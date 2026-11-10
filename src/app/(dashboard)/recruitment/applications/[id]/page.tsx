@@ -29,7 +29,7 @@ export default async function ApplicationDetailPage({ params }: { params: Promis
       where: { id, hospitalId: session.hospitalId },
       include: { candidate: true, vacancy: { include: { department: true } }, interview: true },
     }),
-    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId, isArchived: false }, orderBy: { name: "asc" } }),
     db.aiArtifact.findFirst({ where: { hospitalId: session.hospitalId, applicationId: id, type: "CV_SCREENING" }, orderBy: { createdAt: "desc" } }),
   ]);
 

@@ -3,7 +3,6 @@
 import { useActionState } from "react";
 import { generateSummaryAction } from "@/app/(dashboard)/patients/[id]/aiActions";
 import { Button } from "@/components/ui/Button";
-import { AiAttribution } from "@/components/ai/AiAttribution";
 
 type Props = {
   patientId: string;
@@ -15,8 +14,6 @@ export function AiSummaryPanel({ patientId, aiConfigured, initialSummary }: Prop
   const [state, formAction, pending] = useActionState(generateSummaryAction, undefined);
 
   const text = state?.text ?? initialSummary?.text;
-  const generatedAt = state?.generatedAt ?? initialSummary?.createdAt;
-  const model = initialSummary?.model ?? "claude-haiku-4-5-20251001";
 
   return (
     <div>
@@ -33,20 +30,15 @@ export function AiSummaryPanel({ patientId, aiConfigured, initialSummary }: Prop
       </div>
 
       {!aiConfigured ? (
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          AI summaries turn on once an Anthropic API key is configured for this deployment.
-        </p>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">AI summaries aren&rsquo;t switched on yet.</p>
       ) : state?.error ? (
         <p className="mt-2 text-sm text-[var(--color-danger)]">{state.error}</p>
       ) : text ? (
         <>
           <p className="mt-2 text-sm text-[var(--color-text)]">{text}</p>
-          {generatedAt && <div className="mt-2"><AiAttribution model={model} at={generatedAt} /></div>}
         </>
       ) : (
-        <p className="mt-2 text-sm text-[var(--color-text-muted)]">
-          No summary generated yet for this patient.
-        </p>
+        <p className="mt-2 text-sm text-[var(--color-text-muted)]">A short overview of this patient&rsquo;s history. Press Generate summary to create one.</p>
       )}
     </div>
   );

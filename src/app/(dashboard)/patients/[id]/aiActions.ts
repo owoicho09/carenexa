@@ -15,7 +15,12 @@ export async function generateSummaryAction(_prev: SummaryState, formData: FormD
   const patientId = String(formData.get("patientId") ?? "");
   if (!patientId) return { error: "Missing patient." };
 
-  const result = await generateHistorySummary(patientId, session.hospitalId, session.staffId);
+  let result: Awaited<ReturnType<typeof generateHistorySummary>>;
+  try {
+    result = await generateHistorySummary(patientId, session.hospitalId, session.staffId);
+  } catch {
+    return { error: "The AI service is unavailable right now. Try again later." };
+  }
   if (!result.text) return { error: result.reason ?? "Could not generate a summary." };
 
   revalidatePath(`/patients/${patientId}`);

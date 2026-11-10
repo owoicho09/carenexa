@@ -17,7 +17,7 @@ export default async function RecruitmentPage() {
       orderBy: { createdAt: "desc" },
       include: { department: true, _count: { select: { applications: true } } },
     }),
-    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId, isArchived: false }, orderBy: { name: "asc" } }),
   ]);
 
   return (

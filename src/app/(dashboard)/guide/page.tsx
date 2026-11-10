@@ -115,9 +115,9 @@ export default async function GuidePage() {
       done: reached.has("SUBMITTED"),
     },
     {
-      title: "Receive the referral and register the patient",
+      title: "Confirm the patient's CareNexa ID",
       hospital: "B",
-      detail: "Switch to Specialist Hospital. The overview shows the new referral. Open it, check identity in person and press Register patient at this hospital (or verify, if they already have a record here).",
+      detail: "Switch to Specialist Hospital and open the new referral. The CareNexa ID is hidden here — type it in from the patient's card (it is on their General Hospital record and printed card). If it matches, the patient is registered and acceptance unlocks.",
       href: referralHref,
       linkLabel: "Open referral",
       done: reached.has("ACKNOWLEDGED"),
@@ -131,7 +131,7 @@ export default async function GuidePage() {
       done: reached.has("ARRIVAL_CONFIRMED") || reached.has("TREATMENT_IN_PROGRESS"),
     },
     {
-      title: "See the check-in from the referring hospital",
+      title: "See the check-in from the referrer",
       hospital: "A",
       detail: "Switch back to General Hospital and open the same referral: the tracker shows Checked in, with the time and who confirmed it.",
       href: referralHref,

@@ -143,3 +143,24 @@ export function authorizedCategories(input: {
   }
   return categories;
 }
+
+// ---------------------------------------------------------------------------
+// CareNexa ID confirmation at the receiving hospital.
+// ---------------------------------------------------------------------------
+
+// Tolerant of case, spaces and missing dashes as typed from a patient's card.
+export function normalizeCareNexaId(value: string) {
+  return value.toUpperCase().replace(/[^A-Z0-9]/g, "");
+}
+
+export function careNexaIdMatches(entered: string, actual: string) {
+  const a = normalizeCareNexaId(entered);
+  return a.length >= 6 && a === normalizeCareNexaId(actual);
+}
+
+// Shown to a receiving hospital before it has confirmed the ID, so staff can't
+// simply copy it off the screen: e.g. CNX-••••91C3.
+export function maskCareNexaId(value: string) {
+  const tail = value.replace(/[^A-Za-z0-9]/g, "").slice(-4);
+  return `CNX-••••${tail}`;
+}

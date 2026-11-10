@@ -12,7 +12,7 @@ export default async function StaffDetailPage({ params }: { params: Promise<{ id
   const session = await requireSession(["ADMIN"]);
   const [staff, departments] = await Promise.all([
     db.staffMember.findFirst({ where: { id, hospitalId: session.hospitalId } }),
-    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId, isArchived: false }, orderBy: { name: "asc" } }),
   ]);
 
   if (!staff) notFound();

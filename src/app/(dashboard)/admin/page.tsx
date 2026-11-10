@@ -43,7 +43,7 @@ export default async function AdminOverviewPage() {
     }),
     db.staffMember.count({ where: { hospitalId: session.hospitalId, isActive: true } }),
     db.department.findMany({
-      where: { hospitalId: session.hospitalId, slug: { notIn: ["administration"] } },
+      where: { hospitalId: session.hospitalId, isArchived: false, slug: { notIn: ["administration"] } },
       orderBy: { name: "asc" },
       include: { _count: { select: { staff: true } } },
     }),

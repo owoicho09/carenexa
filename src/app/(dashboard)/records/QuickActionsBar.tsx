@@ -12,9 +12,10 @@ import { openVisitAction } from "@/app/(dashboard)/patients/[id]/actions";
 import { getOpenVisitForPatient } from "./searchActions";
 
 type PatientMatch = { id: string; fullName: string; hospitalNumber: string; phone: string };
-type DeptOption = { id: string; name: string; acceptsRequestTypes: string[] };
+type DeptOption = { id: string; name: string; slug: string; acceptsRequestTypes: string[] };
+type FromOption = { id: string; name: string; slug: string };
 
-export function QuickActionsBar({ departments }: { departments: DeptOption[] }) {
+export function QuickActionsBar({ departments, fromOptions }: { departments: DeptOption[]; fromOptions: FromOption[] | null }) {
   const [activeModal, setActiveModal] = useState<"find" | "open-visit" | "send" | null>(null);
 
   return (
@@ -26,7 +27,7 @@ export function QuickActionsBar({ departments }: { departments: DeptOption[] }) 
 
       <FindPatientModal open={activeModal === "find"} onClose={() => setActiveModal(null)} />
       <OpenVisitModal open={activeModal === "open-visit"} onClose={() => setActiveModal(null)} />
-      <SendPatientModal open={activeModal === "send"} onClose={() => setActiveModal(null)} departments={departments} />
+      <SendPatientModal open={activeModal === "send"} onClose={() => setActiveModal(null)} departments={departments} fromOptions={fromOptions} />
     </div>
   );
 }
@@ -78,7 +79,7 @@ function OpenVisitModal({ open, onClose }: { open: boolean; onClose: () => void 
   );
 }
 
-function SendPatientModal({ open, onClose, departments }: { open: boolean; onClose: () => void; departments: DeptOption[] }) {
+function SendPatientModal({ open, onClose, departments, fromOptions }: { open: boolean; onClose: () => void; departments: DeptOption[]; fromOptions: FromOption[] | null }) {
   const [patient, setPatient] = useState<PatientMatch | null>(null);
   const [visitId, setVisitId] = useState<string | null | undefined>(undefined);
 
@@ -99,13 +100,6 @@ function SendPatientModal({ open, onClose, departments }: { open: boolean; onClo
         <PatientPicker onSelect={handleSelect} />
       ) : visitId === undefined ? (
         <p className="text-sm text-[var(--color-text-muted)]">Checking their visit…</p>
-      ) : visitId === null ? (
-        <div className="space-y-3">
-          <p className="text-sm text-[var(--color-text-muted)]">
-            {patient.fullName} doesn&rsquo;t have an open visit right now — open one first.
-          </p>
-          <Button variant="secondary" size="sm" onClick={reset}>Choose someone else</Button>
-        </div>
       ) : (
         <div className="space-y-3">
           <div className="flex items-center justify-between rounded-md border border-[var(--color-border)] bg-[var(--color-page)] px-3 py-2">
@@ -114,7 +108,8 @@ function SendPatientModal({ open, onClose, departments }: { open: boolean; onClo
               Change
             </button>
           </div>
-          <SendToDepartmentForm visitId={visitId} departments={departments} />
+          {visitId === null && <p className="text-xs text-[var(--color-text-muted)]">No open visit — sending will start one for today.</p>}
+          <SendToDepartmentForm visitId={visitId} patientId={patient.id} departments={departments} fromOptions={fromOptions} />
         </div>
       )}
     </Modal>

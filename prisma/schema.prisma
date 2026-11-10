@@ -71,77 +71,80 @@ model Hospital {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  staffMembers       StaffMember[]
-  rolePermissions    RolePermission[]
-  departments        Department[]
-  cardTypes          CardType[]
-  patients           Patient[]
-  visits             Visit[]
-  appointments       Appointment[]
-  communications     Communication[]
-  requests           Request[]
-  notifications      Notification[]
-  auditLogs          AuditLog[]
-  vacancies          Vacancy[]
-  candidates         Candidate[]
-  applications      Application[]
-  aiArtifacts        AiArtifact[]
-  patientLinks       PatientHospitalLink[]
+  staffMembers          StaffMember[]
+  rolePermissions       RolePermission[]
+  departments           Department[]
+  cardTypes             CardType[]
+  patients              Patient[]
+  visits                Visit[]
+  appointments          Appointment[]
+  communications        Communication[]
+  requests              Request[]
+  notifications         Notification[]
+  auditLogs             AuditLog[]
+  vacancies             Vacancy[]
+  candidates            Candidate[]
+  applications          Application[]
+  aiArtifacts           AiArtifact[]
+  patientLinks          PatientHospitalLink[]
   identityVerifications PatientIdentityVerification[]
-  accessGrantsFrom   PatientAccessGrant[] @relation("GrantSourceHospital")
-  accessGrantsTo     PatientAccessGrant[] @relation("GrantReceivingHospital")
-  emergencyAccessFrom EmergencyAccessEvent[] @relation("EmergencySourceHospital")
-  emergencyAccessTo   EmergencyAccessEvent[] @relation("EmergencyAccessingHospital")
-  referralsFrom      Referral[] @relation("ReferralSourceHospital")
-  referralsTo        Referral[] @relation("ReferralDestinationHospital")
-  clinicalInsights   ClinicalInsight[]
+  accessGrantsFrom      PatientAccessGrant[]          @relation("GrantSourceHospital")
+  accessGrantsTo        PatientAccessGrant[]          @relation("GrantReceivingHospital")
+  emergencyAccessFrom   EmergencyAccessEvent[]        @relation("EmergencySourceHospital")
+  emergencyAccessTo     EmergencyAccessEvent[]        @relation("EmergencyAccessingHospital")
+  referralsFrom         Referral[]                    @relation("ReferralSourceHospital")
+  referralsTo           Referral[]                    @relation("ReferralDestinationHospital")
+  clinicalInsights      ClinicalInsight[]
+  invoices              Invoice[]
 }
 
 model StaffMember {
-  id           String    @id @default(cuid())
-  fullName     String
-  email        String    @unique
-  passwordHash String
-  role         StaffRole
-  jobTitle     String // e.g. "Consultant", "Matron", "Laboratory Scientist II"
-  hospitalId   String?
-  hospital     Hospital? @relation(fields: [hospitalId], references: [id])
-  isPlatformAdmin Boolean @default(false)
-  departmentId String?
-  department   Department? @relation(fields: [departmentId], references: [id])
-  isActive     Boolean   @default(true)
-  toastNotificationsEnabled Boolean @default(true)
-  createdAt    DateTime  @default(now())
+  id                        String      @id @default(cuid())
+  fullName                  String
+  email                     String      @unique
+  passwordHash              String
+  role                      StaffRole
+  jobTitle                  String // e.g. "Consultant", "Matron", "Laboratory Scientist II"
+  hospitalId                String?
+  hospital                  Hospital?   @relation(fields: [hospitalId], references: [id])
+  isPlatformAdmin           Boolean     @default(false)
+  departmentId              String?
+  department                Department? @relation(fields: [departmentId], references: [id])
+  isActive                  Boolean     @default(true)
+  toastNotificationsEnabled Boolean     @default(true)
+  createdAt                 DateTime    @default(now())
 
-  hiredFromCandidateId String?   @unique
+  hiredFromCandidateId String?    @unique
   hiredFromCandidate   Candidate? @relation(fields: [hiredFromCandidateId], references: [id])
 
-  requestsMade      Request[]        @relation("RequestedBy")
-  requestsFulfilled Request[]        @relation("FulfilledBy")
-  vitalsRecorded    VitalsRecord[]
-  notesAuthored     ClinicalNote[]
-  labResultsEntered LabResult[]
-  prescriptionsMade Prescription[]
-  dispensations     Dispensation[]
-  visitsOpened      Visit[]          @relation("VisitOpenedBy")
-  diagnoses         Diagnosis[]
-  appointmentsBooked Appointment[]
-  notifications     Notification[]
-  communicationsSent Communication[]
-  auditLogEntries    AuditLog[]
-  passwordResetTokens PasswordResetToken[]
-  identityVerifications PatientIdentityVerification[]
-  accessGrantsRequested PatientAccessGrant[]
-  referralsAuthored Referral[]
+  requestsMade           Request[]                     @relation("RequestedBy")
+  requestsFulfilled      Request[]                     @relation("FulfilledBy")
+  vitalsRecorded         VitalsRecord[]
+  notesAuthored          ClinicalNote[]
+  labResultsEntered      LabResult[]
+  prescriptionsMade      Prescription[]
+  dispensations          Dispensation[]
+  visitsOpened           Visit[]                       @relation("VisitOpenedBy")
+  diagnoses              Diagnosis[]
+  appointmentsBooked     Appointment[]
+  notifications          Notification[]
+  communicationsSent     Communication[]
+  auditLogEntries        AuditLog[]
+  passwordResetTokens    PasswordResetToken[]
+  identityVerifications  PatientIdentityVerification[]
+  accessGrantsRequested  PatientAccessGrant[]
+  referralsAuthored      Referral[]
   emergencyAccessGranted EmergencyAccessEvent[]
-  aiArtifactsGenerated AiArtifact[] @relation("AiArtifactGeneratedBy")
-  aiArtifactsApproved AiArtifact[] @relation("AiArtifactApprovedBy")
-  insightsReviewed ClinicalInsight[] @relation("ClinicalInsightReviewedBy")
-  referralEvents ReferralEvent[]
+  aiArtifactsGenerated   AiArtifact[]                  @relation("AiArtifactGeneratedBy")
+  aiArtifactsApproved    AiArtifact[]                  @relation("AiArtifactApprovedBy")
+  insightsReviewed       ClinicalInsight[]             @relation("ClinicalInsightReviewedBy")
+  referralEvents         ReferralEvent[]
+  invoicesCreated        Invoice[]                     @relation("InvoiceCreatedBy")
+  paymentsReceived       Payment[]                     @relation("PaymentReceivedBy")
 
+  @@unique([hospitalId, id])
   @@index([departmentId])
   @@index([hospitalId])
-  @@unique([hospitalId, id])
 }
 
 model RolePermission {
@@ -157,17 +160,17 @@ model RolePermission {
 }
 
 model AuditLog {
-  id           String   @id @default(cuid())
-  hospitalId   String?
-  hospital     Hospital? @relation(fields: [hospitalId], references: [id])
-  actorId      String
-  actor        StaffMember @relation(fields: [actorId], references: [id])
-  action       String // "STAFF_CREATED", "PATIENT_DELETED", "DEPARTMENT_EDITED", ...
-  targetType   String // "StaffMember", "Patient", "Department", ...
-  targetId     String?
-  targetLabel  String? // human-readable, e.g. patient name or department name
-  detail       String?
-  createdAt    DateTime @default(now())
+  id          String      @id @default(cuid())
+  hospitalId  String?
+  hospital    Hospital?   @relation(fields: [hospitalId], references: [id])
+  actorId     String
+  actor       StaffMember @relation(fields: [actorId], references: [id])
+  action      String // "STAFF_CREATED", "PATIENT_DELETED", "DEPARTMENT_EDITED", ...
+  targetType  String // "StaffMember", "Patient", "Department", ...
+  targetId    String?
+  targetLabel String? // human-readable, e.g. patient name or department name
+  detail      String?
+  createdAt   DateTime    @default(now())
 
   @@index([createdAt])
   @@index([targetType, targetId])
@@ -175,13 +178,13 @@ model AuditLog {
 }
 
 model PasswordResetToken {
-  id        String    @id @default(cuid())
+  id        String      @id @default(cuid())
   staffId   String
   staff     StaffMember @relation(fields: [staffId], references: [id])
-  token     String    @unique
+  token     String      @unique
   expiresAt DateTime
   usedAt    DateTime?
-  createdAt DateTime  @default(now())
+  createdAt DateTime    @default(now())
 }
 
 // ---------------------------------------------------------------------------
@@ -189,24 +192,28 @@ model PasswordResetToken {
 // ---------------------------------------------------------------------------
 
 model Department {
-  id          String   @id @default(cuid())
-  hospitalId  String
-  hospital    Hospital @relation(fields: [hospitalId], references: [id])
-  name        String
-  slug        String
-  description String
+  id                  String    @id @default(cuid())
+  hospitalId          String
+  hospital            Hospital  @relation(fields: [hospitalId], references: [id])
+  name                String
+  slug                String
+  description         String
   acceptsRequestTypes String[] // free-form labels this department can receive, e.g. ["Laboratory Test", "Blood Culture"]
-  resultFields        Json     // shape of the outcome form this department fills in, admin-defined
-  createdAt   DateTime @default(now())
+  resultFields        Json // shape of the outcome form this department fills in, admin-defined
+  createdAt           DateTime  @default(now())
+  // Removed departments are archived, not deleted, so past requests and
+  // referrals keep their history. Archived departments are hidden from lists.
+  isArchived          Boolean   @default(false)
+  archivedAt          DateTime?
 
-  staff             StaffMember[]
-  requestsReceived  Request[]     @relation("RequestToDepartment")
-  requestsSent      Request[]     @relation("RequestFromDepartment")
-  referralsSent     Referral[]    @relation("ReferralSourceDepartment")
-  externalReferralsReceived Referral[] @relation("ReferralDestinationDepartment")
-  vacancies         Vacancy[]
-  appointments      Appointment[]
-  notifications     Notification[]
+  staff                     StaffMember[]
+  requestsReceived          Request[]      @relation("RequestToDepartment")
+  requestsSent              Request[]      @relation("RequestFromDepartment")
+  referralsSent             Referral[]     @relation("ReferralSourceDepartment")
+  externalReferralsReceived Referral[]     @relation("ReferralDestinationDepartment")
+  vacancies                 Vacancy[]
+  appointments              Appointment[]
+  notifications             Notification[]
 
   @@unique([hospitalId, id])
   @@unique([hospitalId, name])
@@ -232,9 +239,9 @@ enum Genotype {
 }
 
 model CardType {
-  id          String  @id @default(cuid())
+  id          String                  @id @default(cuid())
   hospitalId  String
-  hospital    Hospital @relation(fields: [hospitalId], references: [id])
+  hospital    Hospital                @relation(fields: [hospitalId], references: [id])
   name        String // "General Outpatient", "Private", "Antenatal", "Child Welfare", "Staff"
   seriesCode  String // "GOP", "PVT", "ANC", "CWC", "STF"
   description String
@@ -258,37 +265,38 @@ model HospitalNumberCounter {
 }
 
 model Patient {
-  id             String    @id @default(cuid())
+  id             String   @id @default(cuid())
   hospitalId     String
   hospital       Hospital @relation(fields: [hospitalId], references: [id])
   hospitalNumber String // e.g. GOP/2026/00412
   cardTypeId     String
-  cardType       CardType  @relation(fields: [cardTypeId], references: [id])
+  cardType       CardType @relation(fields: [cardTypeId], references: [id])
 
-  fullName       String
-  dateOfBirth    DateTime
-  sex            Sex
-  phone          String
-  address        String
-  bloodGroup     String? // "O+", "A-", ...
-  genotype       Genotype?
-  allergies      String[] // ["Penicillin", "Sulfa drugs"]
+  fullName    String
+  dateOfBirth DateTime
+  sex         Sex
+  phone       String
+  address     String
+  bloodGroup  String? // "O+", "A-", ...
+  genotype    Genotype?
+  allergies   String[] // ["Penicillin", "Sulfa drugs"]
 
-  nextOfKinName  String
-  nextOfKinPhone String
+  nextOfKinName     String
+  nextOfKinPhone    String
   nextOfKinRelation String
 
-  registeredAt   DateTime  @default(now())
-  isDeleted      Boolean   @default(false)
-  deletedAt      DateTime?
+  registeredAt DateTime  @default(now())
+  isDeleted    Boolean   @default(false)
+  deletedAt    DateTime?
 
-  visits         Visit[]
-  appointments   Appointment[]
-  communications Communication[]
-  identityLinks  PatientHospitalLink[]
+  visits                Visit[]
+  appointments          Appointment[]
+  communications        Communication[]
+  identityLinks         PatientHospitalLink[]
   identityVerifications PatientIdentityVerification[]
-  referrals      Referral[]
-  clinicalInsights ClinicalInsight[]
+  referrals             Referral[]
+  clinicalInsights      ClinicalInsight[]
+  invoices              Invoice[]
 
   @@unique([hospitalId, id])
   @@unique([hospitalId, hospitalNumber])
@@ -297,30 +305,30 @@ model Patient {
 }
 
 model CareNexaIdentity {
-  id                    String   @id @default(cuid())
-  universalPatientNumber String  @unique
-  verificationStatus    IdentityVerificationStatus @default(PENDING)
-  verificationMethod   String?
-  verifiedAt            DateTime?
-  createdAt             DateTime @default(now())
+  id                     String                     @id @default(cuid())
+  universalPatientNumber String                     @unique
+  verificationStatus     IdentityVerificationStatus @default(PENDING)
+  verificationMethod     String?
+  verifiedAt             DateTime?
+  createdAt              DateTime                   @default(now())
 
-  hospitalLinks      PatientHospitalLink[]
-  verifications      PatientIdentityVerification[]
-  accessGrants       PatientAccessGrant[]
+  hospitalLinks         PatientHospitalLink[]
+  verifications         PatientIdentityVerification[]
+  accessGrants          PatientAccessGrant[]
   emergencyAccessEvents EmergencyAccessEvent[]
-  referrals          Referral[]
-  clinicalInsights   ClinicalInsight[]
+  referrals             Referral[]
+  clinicalInsights      ClinicalInsight[]
 }
 
 model PatientHospitalLink {
-  id          String   @id @default(cuid())
-  identityId  String
-  identity    CareNexaIdentity @relation(fields: [identityId], references: [id])
-  hospitalId  String
-  hospital    Hospital @relation(fields: [hospitalId], references: [id])
-  patientId   String
-  patient     Patient  @relation(fields: [patientId], references: [id])
-  linkedAt    DateTime @default(now())
+  id                 String                     @id @default(cuid())
+  identityId         String
+  identity           CareNexaIdentity           @relation(fields: [identityId], references: [id])
+  hospitalId         String
+  hospital           Hospital                   @relation(fields: [hospitalId], references: [id])
+  patientId          String
+  patient            Patient                    @relation(fields: [patientId], references: [id])
+  linkedAt           DateTime                   @default(now())
   verificationStatus IdentityVerificationStatus @default(PENDING)
 
   @@unique([hospitalId, patientId])
@@ -329,35 +337,35 @@ model PatientHospitalLink {
 }
 
 model PatientIdentityVerification {
-  id              String   @id @default(cuid())
-  identityId      String
-  identity        CareNexaIdentity @relation(fields: [identityId], references: [id])
-  hospitalId      String
-  hospital        Hospital @relation(fields: [hospitalId], references: [id])
-  patientId       String
-  patient         Patient  @relation(fields: [patientId], references: [id])
-  verifiedById    String
-  verifiedBy      StaffMember @relation(fields: [verifiedById], references: [id])
-  status          IdentityVerificationStatus
-  method          String
+  id                String                     @id @default(cuid())
+  identityId        String
+  identity          CareNexaIdentity           @relation(fields: [identityId], references: [id])
+  hospitalId        String
+  hospital          Hospital                   @relation(fields: [hospitalId], references: [id])
+  patientId         String
+  patient           Patient                    @relation(fields: [patientId], references: [id])
+  verifiedById      String
+  verifiedBy        StaffMember                @relation(fields: [verifiedById], references: [id])
+  status            IdentityVerificationStatus
+  method            String
   evidenceReference String?
-  verifiedAt      DateTime @default(now())
-  revokedAt       DateTime?
+  verifiedAt        DateTime                   @default(now())
+  revokedAt         DateTime?
 
   @@index([identityId, hospitalId, status])
   @@index([patientId])
 }
 
 model PatientAccessGrant {
-  id                    String   @id @default(cuid())
+  id                    String            @id @default(cuid())
   identityId            String
-  identity              CareNexaIdentity @relation(fields: [identityId], references: [id])
+  identity              CareNexaIdentity  @relation(fields: [identityId], references: [id])
   sourceHospitalId      String
-  sourceHospital        Hospital @relation("GrantSourceHospital", fields: [sourceHospitalId], references: [id])
+  sourceHospital        Hospital          @relation("GrantSourceHospital", fields: [sourceHospitalId], references: [id])
   receivingHospitalId   String
-  receivingHospital     Hospital @relation("GrantReceivingHospital", fields: [receivingHospitalId], references: [id])
+  receivingHospital     Hospital          @relation("GrantReceivingHospital", fields: [receivingHospitalId], references: [id])
   requestingStaffId     String?
-  requestingStaff       StaffMember? @relation(fields: [requestingStaffId], references: [id])
+  requestingStaff       StaffMember?      @relation(fields: [requestingStaffId], references: [id])
   purpose               String
   recordCategories      String[]
   status                AccessGrantStatus @default(PENDING)
@@ -365,9 +373,9 @@ model PatientAccessGrant {
   authorizedAt          DateTime?
   expiresAt             DateTime?
   revokedAt             DateTime?
-  createdAt             DateTime @default(now())
+  createdAt             DateTime          @default(now())
   referralId            String?
-  referral              Referral? @relation(fields: [referralId], references: [id])
+  referral              Referral?         @relation(fields: [referralId], references: [id])
 
   @@index([identityId, receivingHospitalId, status])
   @@index([sourceHospitalId, receivingHospitalId])
@@ -375,20 +383,20 @@ model PatientAccessGrant {
 }
 
 model EmergencyAccessEvent {
-  id                  String   @id @default(cuid())
+  id                  String           @id @default(cuid())
   identityId          String
   identity            CareNexaIdentity @relation(fields: [identityId], references: [id])
   sourceHospitalId    String
-  sourceHospital      Hospital @relation("EmergencySourceHospital", fields: [sourceHospitalId], references: [id])
+  sourceHospital      Hospital         @relation("EmergencySourceHospital", fields: [sourceHospitalId], references: [id])
   accessingHospitalId String
-  accessingHospital   Hospital @relation("EmergencyAccessingHospital", fields: [accessingHospitalId], references: [id])
+  accessingHospital   Hospital         @relation("EmergencyAccessingHospital", fields: [accessingHospitalId], references: [id])
   referralId          String?
-  referral            Referral? @relation(fields: [referralId], references: [id])
+  referral            Referral?        @relation(fields: [referralId], references: [id])
   grantedById         String
-  grantedBy           StaffMember @relation(fields: [grantedById], references: [id])
+  grantedBy           StaffMember      @relation(fields: [grantedById], references: [id])
   reason              String
   recordCategories    String[]
-  createdAt           DateTime @default(now())
+  createdAt           DateTime         @default(now())
   expiresAt           DateTime
   endedAt             DateTime?
 
@@ -406,33 +414,34 @@ enum VisitStatus {
 }
 
 model Visit {
-  id            String      @id @default(cuid())
-  hospitalId    String
-  hospital      Hospital    @relation(fields: [hospitalId], references: [id])
-  patientId     String
-  patient       Patient     @relation(fields: [patientId], references: [id])
-  openedAt      DateTime    @default(now())
-  openedById    String?
-  openedBy      StaffMember? @relation("VisitOpenedBy", fields: [openedById], references: [id])
-  closedAt      DateTime?
-  status        VisitStatus @default(OPEN)
+  id                  String       @id @default(cuid())
+  hospitalId          String
+  hospital            Hospital     @relation(fields: [hospitalId], references: [id])
+  patientId           String
+  patient             Patient      @relation(fields: [patientId], references: [id])
+  openedAt            DateTime     @default(now())
+  openedById          String?
+  openedBy            StaffMember? @relation("VisitOpenedBy", fields: [openedById], references: [id])
+  closedAt            DateTime?
+  status              VisitStatus  @default(OPEN)
   presentingComplaint String?
-  followUpDate  DateTime?
-  followUpNote  String?
+  followUpDate        DateTime?
+  followUpNote        String?
 
-  requests       Request[]
-  vitals         VitalsRecord[]
-  notes          ClinicalNote[]
-  labResults     LabResult[]
-  prescriptions  Prescription[]
-  diagnoses      Diagnosis[]
-  aiArtifacts    AiArtifact[]
-  referrals      Referral[]
+  requests         Request[]
+  vitals           VitalsRecord[]
+  notes            ClinicalNote[]
+  labResults       LabResult[]
+  prescriptions    Prescription[]
+  diagnoses        Diagnosis[]
+  aiArtifacts      AiArtifact[]
+  referrals        Referral[]
   clinicalInsights ClinicalInsight[]
+  invoices         Invoice[]
 
+  @@unique([hospitalId, id])
   @@index([patientId])
   @@index([hospitalId, patientId])
-  @@unique([hospitalId, id])
 }
 
 // ---------------------------------------------------------------------------
@@ -521,70 +530,70 @@ enum RequestUrgency {
 }
 
 model Request {
-  id               String         @id @default(cuid())
-  hospitalId       String
-  hospital         Hospital       @relation(fields: [hospitalId], references: [id])
-  visitId          String
-  visit            Visit          @relation(fields: [visitId], references: [id])
+  id         String   @id @default(cuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  visitId    String
+  visit      Visit    @relation(fields: [visitId], references: [id])
 
   fromDepartmentId String
-  fromDepartment   Department     @relation("RequestFromDepartment", fields: [fromDepartmentId], references: [id])
+  fromDepartment   Department @relation("RequestFromDepartment", fields: [fromDepartmentId], references: [id])
   toDepartmentId   String
-  toDepartment     Department     @relation("RequestToDepartment", fields: [toDepartmentId], references: [id])
+  toDepartment     Department @relation("RequestToDepartment", fields: [toDepartmentId], references: [id])
 
-  requestedById    String
-  requestedBy      StaffMember    @relation("RequestedBy", fields: [requestedById], references: [id])
-  fulfilledById    String?
-  fulfilledBy      StaffMember?   @relation("FulfilledBy", fields: [fulfilledById], references: [id])
+  requestedById String
+  requestedBy   StaffMember  @relation("RequestedBy", fields: [requestedById], references: [id])
+  fulfilledById String?
+  fulfilledBy   StaffMember? @relation("FulfilledBy", fields: [fulfilledById], references: [id])
 
-  requestType      String // "Full Blood Count", "Vitals Check", "Clinical Review", admin/department-defined
-  reason           String
-  urgency          RequestUrgency @default(ROUTINE)
-  status           RequestStatus  @default(PENDING)
+  requestType String // "Full Blood Count", "Vitals Check", "Clinical Review", admin/department-defined
+  reason      String
+  urgency     RequestUrgency @default(ROUTINE)
+  status      RequestStatus  @default(PENDING)
 
-  queryNote        String? // set when status = QUERIED
+  queryNote String? // set when status = QUERIED
 
-  outcome          Json? // free-form outcome for departments without a dedicated model (admin-defined resultFields)
-  outcomeSummary   String? // short human-readable line shown in queues/history for any outcome type
+  outcome        Json? // free-form outcome for departments without a dedicated model (admin-defined resultFields)
+  outcomeSummary String? // short human-readable line shown in queues/history for any outcome type
 
-  createdAt        DateTime       @default(now())
-  completedAt      DateTime?
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
 
-  labResults       LabResult[]
-  notifications    Notification[]
+  labResults    LabResult[]
+  notifications Notification[]
 
+  @@unique([hospitalId, id])
   @@index([visitId])
   @@index([toDepartmentId, status])
   @@index([hospitalId, toDepartmentId, status])
-  @@unique([hospitalId, id])
 }
 
 model Referral {
-  id                      String   @id @default(cuid())
+  id                      String                 @id @default(cuid())
   identityId              String
-  identity                CareNexaIdentity @relation(fields: [identityId], references: [id])
+  identity                CareNexaIdentity       @relation(fields: [identityId], references: [id])
   patientId               String
-  patient                 Patient  @relation(fields: [patientId], references: [id])
+  patient                 Patient                @relation(fields: [patientId], references: [id])
   sourceVisitId           String?
-  sourceVisit             Visit?   @relation(fields: [sourceVisitId], references: [id])
+  sourceVisit             Visit?                 @relation(fields: [sourceVisitId], references: [id])
   sourceHospitalId        String
-  sourceHospital          Hospital @relation("ReferralSourceHospital", fields: [sourceHospitalId], references: [id])
+  sourceHospital          Hospital               @relation("ReferralSourceHospital", fields: [sourceHospitalId], references: [id])
   destinationHospitalId   String
-  destinationHospital     Hospital @relation("ReferralDestinationHospital", fields: [destinationHospitalId], references: [id])
+  destinationHospital     Hospital               @relation("ReferralDestinationHospital", fields: [destinationHospitalId], references: [id])
   sourceDepartmentId      String?
-  sourceDepartment        Department? @relation("ReferralSourceDepartment", fields: [sourceDepartmentId], references: [id])
+  sourceDepartment        Department?            @relation("ReferralSourceDepartment", fields: [sourceDepartmentId], references: [id])
   destinationDepartmentId String?
-  destinationDepartment   Department? @relation("ReferralDestinationDepartment", fields: [destinationDepartmentId], references: [id])
+  destinationDepartment   Department?            @relation("ReferralDestinationDepartment", fields: [destinationDepartmentId], references: [id])
   referringStaffId        String
-  referringStaff          StaffMember @relation(fields: [referringStaffId], references: [id])
+  referringStaff          StaffMember            @relation(fields: [referringStaffId], references: [id])
   reason                  String
-  urgency                 RequestUrgency @default(ROUTINE)
+  urgency                 RequestUrgency         @default(ROUTINE)
   requestedService        String
   clinicalInformation     Json
-  status                  ReferralStatus @default(DRAFT)
+  status                  ReferralStatus         @default(DRAFT)
   appointmentScheduledFor DateTime?
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  createdAt               DateTime               @default(now())
+  updatedAt               DateTime               @updatedAt
   submittedAt             DateTime?
   events                  ReferralEvent[]
   accessGrants            PatientAccessGrant[]
@@ -598,14 +607,14 @@ model Referral {
 }
 
 model ReferralEvent {
-  id         String   @id @default(cuid())
+  id         String         @id @default(cuid())
   referralId String
-  referral   Referral @relation(fields: [referralId], references: [id])
+  referral   Referral       @relation(fields: [referralId], references: [id])
   actorId    String
-  actor      StaffMember @relation(fields: [actorId], references: [id])
+  actor      StaffMember    @relation(fields: [actorId], references: [id])
   status     ReferralStatus
   detail     String?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime       @default(now())
 
   @@index([referralId, createdAt])
 }
@@ -615,22 +624,22 @@ model ReferralEvent {
 // ---------------------------------------------------------------------------
 
 model Notification {
-  id           String      @id @default(cuid())
-  hospitalId   String
-  hospital     Hospital    @relation(fields: [hospitalId], references: [id])
-  type         String // "REQUEST_INCOMING" | "REQUEST_COMPLETED" | "REQUEST_QUERIED"
-  message      String
+  id         String   @id @default(cuid())
+  hospitalId String
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  type       String // "REQUEST_INCOMING" | "REQUEST_COMPLETED" | "REQUEST_QUERIED"
+  message    String
 
   departmentId String? // notify anyone currently in this department (incoming work)
-  department   Department? @relation(fields: [departmentId], references: [id])
+  department   Department?  @relation(fields: [departmentId], references: [id])
   staffId      String? // notify this specific person (their own request was answered)
   staff        StaffMember? @relation(fields: [staffId], references: [id])
 
-  requestId    String?
-  request      Request?    @relation(fields: [requestId], references: [id])
+  requestId String?
+  request   Request? @relation(fields: [requestId], references: [id])
 
-  createdAt    DateTime    @default(now())
-  readAt       DateTime?
+  createdAt DateTime  @default(now())
+  readAt    DateTime?
 
   @@index([departmentId, readAt])
   @@index([staffId, readAt])
@@ -642,35 +651,35 @@ model Notification {
 // ---------------------------------------------------------------------------
 
 model VitalsRecord {
-  id                  String      @id @default(cuid())
-  visitId             String
-  visit               Visit       @relation(fields: [visitId], references: [id])
-  recordedById        String
-  recordedBy          StaffMember @relation(fields: [recordedById], references: [id])
-  recordedAt          DateTime    @default(now())
+  id           String      @id @default(cuid())
+  visitId      String
+  visit        Visit       @relation(fields: [visitId], references: [id])
+  recordedById String
+  recordedBy   StaffMember @relation(fields: [recordedById], references: [id])
+  recordedAt   DateTime    @default(now())
 
-  systolicBp          Int?
-  diastolicBp         Int?
-  temperatureC         Float?
-  pulseBpm            Int?
-  respiratoryRate     Int?
-  weightKg            Float?
-  heightCm            Float?
+  systolicBp      Int?
+  diastolicBp     Int?
+  temperatureC    Float?
+  pulseBpm        Int?
+  respiratoryRate Int?
+  weightKg        Float?
+  heightCm        Float?
 
   @@index([visitId])
 }
 
 model ClinicalNote {
-  id           String      @id @default(cuid())
-  visitId      String
-  visit        Visit       @relation(fields: [visitId], references: [id])
-  authorId     String
-  author       StaffMember @relation(fields: [authorId], references: [id])
-  createdAt    DateTime    @default(now())
+  id        String      @id @default(cuid())
+  visitId   String
+  visit     Visit       @relation(fields: [visitId], references: [id])
+  authorId  String
+  author    StaffMember @relation(fields: [authorId], references: [id])
+  createdAt DateTime    @default(now())
 
   shorthand    String? // clinician's raw shorthand input, if AI-assisted
   content      String // final structured note
-  isAiAssisted Boolean     @default(false)
+  isAiAssisted Boolean   @default(false)
   signedAt     DateTime?
 
   @@index([visitId])
@@ -682,23 +691,23 @@ enum LabResultType {
 }
 
 model LabResult {
-  id             String       @id @default(cuid())
-  visitId        String
-  visit          Visit        @relation(fields: [visitId], references: [id])
-  requestId      String?
-  request        Request?     @relation(fields: [requestId], references: [id])
-  enteredById    String
-  enteredBy      StaffMember  @relation(fields: [enteredById], references: [id])
-  enteredAt      DateTime     @default(now())
+  id          String      @id @default(cuid())
+  visitId     String
+  visit       Visit       @relation(fields: [visitId], references: [id])
+  requestId   String?
+  request     Request?    @relation(fields: [requestId], references: [id])
+  enteredById String
+  enteredBy   StaffMember @relation(fields: [enteredById], references: [id])
+  enteredAt   DateTime    @default(now())
 
-  testName       String // "Fasting Blood Glucose", "Malaria Parasite"
-  resultType     LabResultType @default(NUMERIC)
-  value          Float? // set when resultType = NUMERIC
+  testName         String // "Fasting Blood Glucose", "Malaria Parasite"
+  resultType       LabResultType @default(NUMERIC)
+  value            Float? // set when resultType = NUMERIC
   qualitativeValue String? // set when resultType = QUALITATIVE, e.g. "Positive", "Non-reactive"
-  unit           String // "mg/dL", or "" for qualitative tests
-  referenceLow   Float?
-  referenceHigh  Float?
-  isAbnormal     Boolean      @default(false)
+  unit             String // "mg/dL", or "" for qualitative tests
+  referenceLow     Float?
+  referenceHigh    Float?
+  isAbnormal       Boolean       @default(false)
 
   @@index([visitId])
   @@index([testName])
@@ -712,8 +721,8 @@ model Diagnosis {
   recordedBy   StaffMember @relation(fields: [recordedById], references: [id])
   createdAt    DateTime    @default(now())
 
-  description  String
-  plan         String
+  description String
+  plan        String
 
   @@index([visitId])
 }
@@ -724,18 +733,18 @@ enum PrescriptionStatus {
 }
 
 model Prescription {
-  id           String              @id @default(cuid())
-  visitId      String
-  visit        Visit               @relation(fields: [visitId], references: [id])
+  id             String      @id @default(cuid())
+  visitId        String
+  visit          Visit       @relation(fields: [visitId], references: [id])
   prescribedById String
-  prescribedBy StaffMember         @relation(fields: [prescribedById], references: [id])
-  createdAt    DateTime            @default(now())
+  prescribedBy   StaffMember @relation(fields: [prescribedById], references: [id])
+  createdAt      DateTime    @default(now())
 
-  drugName     String
-  dosage       String // "500mg"
-  frequency    String // "TDS", "BD", "OD"
-  duration     String // "5 days"
-  status       PrescriptionStatus  @default(PENDING)
+  drugName  String
+  dosage    String // "500mg"
+  frequency String // "TDS", "BD", "OD"
+  duration  String // "5 days"
+  status    PrescriptionStatus @default(PENDING)
 
   dispensation Dispensation?
 
@@ -767,28 +776,28 @@ enum AiArtifactType {
 }
 
 model AiArtifact {
-  id           String         @id @default(cuid())
-  hospitalId   String
-  hospital     Hospital       @relation(fields: [hospitalId], references: [id])
-  type         AiArtifactType
-  visitId      String?
-  visit        Visit?         @relation(fields: [visitId], references: [id])
+  id            String         @id @default(cuid())
+  hospitalId    String
+  hospital      Hospital       @relation(fields: [hospitalId], references: [id])
+  type          AiArtifactType
+  visitId       String?
+  visit         Visit?         @relation(fields: [visitId], references: [id])
   applicationId String?
-  application  Application?   @relation(fields: [applicationId], references: [id])
+  application   Application?   @relation(fields: [applicationId], references: [id])
 
-  model        String // model id used
-  input        Json // structured input snapshot for reproducibility
-  output       Json // structured output (summary text, score+reasoning, etc.)
-  createdAt    DateTime       @default(now())
+  model     String // model id used
+  input     Json // structured input snapshot for reproducibility
+  output    Json // structured output (summary text, score+reasoning, etc.)
+  createdAt DateTime @default(now())
 
-  requiresApproval Boolean    @default(false)
-  approvedById String?
-  approvedBy   StaffMember?   @relation("AiArtifactApprovedBy", fields: [approvedById], references: [id])
-  approvedAt   DateTime?
-  provider     String         @default("ANTHROPIC")
-  promptVersion String?
-  generatedById String?
-  generatedBy  StaffMember?   @relation("AiArtifactGeneratedBy", fields: [generatedById], references: [id])
+  requiresApproval Boolean      @default(false)
+  approvedById     String?
+  approvedBy       StaffMember? @relation("AiArtifactApprovedBy", fields: [approvedById], references: [id])
+  approvedAt       DateTime?
+  provider         String       @default("ANTHROPIC")
+  promptVersion    String?
+  generatedById    String?
+  generatedBy      StaffMember? @relation("AiArtifactGeneratedBy", fields: [generatedById], references: [id])
 
   @@index([visitId])
   @@index([applicationId])
@@ -796,15 +805,15 @@ model AiArtifact {
 }
 
 model ClinicalInsight {
-  id             String   @id @default(cuid())
+  id             String              @id @default(cuid())
   hospitalId     String
-  hospital       Hospital @relation(fields: [hospitalId], references: [id])
+  hospital       Hospital            @relation(fields: [hospitalId], references: [id])
   identityId     String?
-  identity       CareNexaIdentity? @relation(fields: [identityId], references: [id])
+  identity       CareNexaIdentity?   @relation(fields: [identityId], references: [id])
   patientId      String
-  patient        Patient  @relation(fields: [patientId], references: [id])
+  patient        Patient             @relation(fields: [patientId], references: [id])
   visitId        String?
-  visit          Visit?   @relation(fields: [visitId], references: [id])
+  visit          Visit?              @relation(fields: [visitId], references: [id])
   type           ClinicalInsightType
   title          String
   summary        String
@@ -812,12 +821,12 @@ model ClinicalInsight {
   model          String
   provider       String
   promptVersion  String
-  requiresReview Boolean  @default(true)
+  requiresReview Boolean             @default(true)
   reviewedById   String?
-  reviewedBy     StaffMember? @relation("ClinicalInsightReviewedBy", fields: [reviewedById], references: [id])
+  reviewedBy     StaffMember?        @relation("ClinicalInsightReviewedBy", fields: [reviewedById], references: [id])
   reviewedAt     DateTime?
   dismissedAt    DateTime?
-  createdAt      DateTime @default(now())
+  createdAt      DateTime            @default(now())
 
   @@index([hospitalId, patientId, createdAt])
   @@index([identityId])
@@ -835,20 +844,20 @@ enum VacancyStatus {
 }
 
 model Vacancy {
-  id           String        @id @default(cuid())
-  hospitalId   String
-  hospital     Hospital      @relation(fields: [hospitalId], references: [id])
-  title        String
-  departmentId String?
-  department   Department?   @relation(fields: [departmentId], references: [id])
-  description  String
-  requirements String[] // discrete requirement lines the AI screens CVs against
+  id             String        @id @default(cuid())
+  hospitalId     String
+  hospital       Hospital      @relation(fields: [hospitalId], references: [id])
+  title          String
+  departmentId   String?
+  department     Department?   @relation(fields: [departmentId], references: [id])
+  description    String
+  requirements   String[] // discrete requirement lines the AI screens CVs against
   employmentType String // "Full-time", "Locum"
-  location     String
-  status       VacancyStatus @default(DRAFT)
-  publishedAt  DateTime?
-  closedAt     DateTime?
-  createdAt    DateTime      @default(now())
+  location       String
+  status         VacancyStatus @default(DRAFT)
+  publishedAt    DateTime?
+  closedAt       DateTime?
+  createdAt      DateTime      @default(now())
 
   applications Application[]
 
@@ -865,13 +874,13 @@ enum ApplicationStage {
 }
 
 model Candidate {
-  id        String   @id @default(cuid())
+  id         String   @id @default(cuid())
   hospitalId String
-  hospital  Hospital @relation(fields: [hospitalId], references: [id])
-  fullName  String
-  email     String
-  phone     String
-  createdAt DateTime @default(now())
+  hospital   Hospital @relation(fields: [hospitalId], references: [id])
+  fullName   String
+  email      String
+  phone      String
+  createdAt  DateTime @default(now())
 
   applications Application[]
   hiredAsStaff StaffMember?
@@ -880,28 +889,28 @@ model Candidate {
 }
 
 model Application {
-  id           String            @id @default(cuid())
-  hospitalId   String
-  hospital     Hospital          @relation(fields: [hospitalId], references: [id])
-  vacancyId    String
-  vacancy      Vacancy           @relation(fields: [vacancyId], references: [id])
-  candidateId  String
-  candidate    Candidate         @relation(fields: [candidateId], references: [id])
+  id          String    @id @default(cuid())
+  hospitalId  String
+  hospital    Hospital  @relation(fields: [hospitalId], references: [id])
+  vacancyId   String
+  vacancy     Vacancy   @relation(fields: [vacancyId], references: [id])
+  candidateId String
+  candidate   Candidate @relation(fields: [candidateId], references: [id])
 
   cvFileName     String? // original filename, e.g. "jane-doe-cv.pdf"
   cvFileMimeType String? // application/pdf, application/msword, or the docx MIME type
   cvFileData     Bytes? // the uploaded file itself — served back via the CV download route
-  cvText       String? // legacy: pasted CV text from before file upload existed; screened by AI as a fallback
-  coverNote    String?
-  stage        ApplicationStage  @default(APPLIED)
-  appliedAt    DateTime          @default(now())
+  cvText         String? // legacy: pasted CV text from before file upload existed; screened by AI as a fallback
+  coverNote      String?
+  stage          ApplicationStage @default(APPLIED)
+  appliedAt      DateTime         @default(now())
 
-  screeningScore    Int?
-  screeningReasoning String?
+  screeningScore        Int?
+  screeningReasoning    String?
   screeningOverrideNote String?
 
-  interview    Interview?
-  aiArtifacts  AiArtifact[]
+  interview   Interview?
+  aiArtifacts AiArtifact[]
 
   @@index([vacancyId, stage])
   @@index([hospitalId, vacancyId, stage])
@@ -914,4 +923,71 @@ model Interview {
   scheduledFor  DateTime
   outcome       String? // recorded after the interview
   createdAt     DateTime    @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Billing — patient bills and payments, per hospital. Amounts in kobo (NGN).
+// ---------------------------------------------------------------------------
+
+enum InvoiceStatus {
+  UNPAID
+  PARTIALLY_PAID
+  PAID
+  VOID
+}
+
+enum PaymentMethod {
+  CASH
+  CARD
+  TRANSFER
+  INSURANCE
+}
+
+model Invoice {
+  id          String        @id @default(cuid())
+  hospitalId  String
+  hospital    Hospital      @relation(fields: [hospitalId], references: [id])
+  number      String // e.g. INV-2026-00012, unique within the hospital
+  patientId   String
+  patient     Patient       @relation(fields: [patientId], references: [id])
+  visitId     String?
+  visit       Visit?        @relation(fields: [visitId], references: [id])
+  status      InvoiceStatus @default(UNPAID)
+  note        String?
+  createdById String
+  createdBy   StaffMember   @relation("InvoiceCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime      @default(now())
+  voidedAt    DateTime?
+
+  items    InvoiceItem[]
+  payments Payment[]
+
+  @@unique([hospitalId, number])
+  @@index([hospitalId, status, createdAt])
+  @@index([patientId])
+}
+
+model InvoiceItem {
+  id            String  @id @default(cuid())
+  invoiceId     String
+  invoice       Invoice @relation(fields: [invoiceId], references: [id])
+  description   String
+  quantity      Int     @default(1)
+  unitPriceKobo Int
+
+  @@index([invoiceId])
+}
+
+model Payment {
+  id           String        @id @default(cuid())
+  invoiceId    String
+  invoice      Invoice       @relation(fields: [invoiceId], references: [id])
+  amountKobo   Int
+  method       PaymentMethod
+  reference    String?
+  receivedById String
+  receivedBy   StaffMember   @relation("PaymentReceivedBy", fields: [receivedById], references: [id])
+  receivedAt   DateTime      @default(now())
+
+  @@index([invoiceId])
 }

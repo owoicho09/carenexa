@@ -2,7 +2,7 @@
 
 import { useActionState, useRef, useEffect } from "react";
 import { createDepartmentAction } from "./actions";
-import { Field, Input, Textarea, FormError } from "@/components/ui/Field";
+import { Field, Input, FormError } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { useActionToast } from "@/components/ui/SubmitWithToast";
 
@@ -12,30 +12,47 @@ export function NewDepartmentForm() {
   useActionToast(pending, Boolean(state?.error), "Department added");
 
   useEffect(() => {
-    if (state === undefined) formRef.current?.reset();
+    if (state?.created) formRef.current?.reset();
   }, [state]);
 
   return (
     <form ref={formRef} action={formAction} className="space-y-4">
       <FormError>{state?.error}</FormError>
-      <div className="grid grid-cols-2 gap-4">
+      {state?.created && !pending && (
+        <p role="status" className="rounded-md border border-[var(--color-success)]/30 bg-[var(--color-success-soft)] px-3 py-2 text-sm text-[var(--color-success)]">
+          <span className="font-semibold">{state.created.name}</span> was added.{" "}
+          <a href={`#dept-${state.created.id}`} className="font-medium underline">Show it in the list</a>
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Department name" htmlFor="name">
-          <Input id="name" name="name" required placeholder="e.g. Dental Clinic" />
+          <Input id="name" name="name" required placeholder="e.g. Radiology" />
         </Field>
-        <Field label="Request types it accepts" htmlFor="acceptsRequestTypes" hint="Comma-separated. Leave blank if this department never receives requests.">
-          <Input id="acceptsRequestTypes" name="acceptsRequestTypes" placeholder="Tooth Extraction, Dental Review" />
+        <Field label="What it does" htmlFor="description">
+          <Input id="description" name="description" required placeholder="e.g. X-rays and scans" />
         </Field>
       </div>
-      <Field label="Description" htmlFor="description">
-        <Textarea id="description" name="description" required placeholder="What this department is for." />
+      <Field
+        label="Services patients can be sent here for (optional)"
+        htmlFor="acceptsRequestTypes"
+        hint="Separate with commas, e.g. X-Ray, Ultrasound. These appear when sending a patient to this department. Leave blank if patients aren't sent here."
+      >
+        <Input id="acceptsRequestTypes" name="acceptsRequestTypes" placeholder="X-Ray, Ultrasound" />
       </Field>
-      <Field label="Outcome fields" htmlFor="resultFields" hint="Comma-separated field labels staff fill in when they complete a request here, e.g. Findings, Recommendation.">
-        <Input id="resultFields" name="resultFields" placeholder="Findings, Recommendation" />
-      </Field>
+      <details className="rounded-md border border-[var(--color-border)] px-3 py-2">
+        <summary className="cursor-pointer text-xs font-medium text-[var(--color-text-muted)]">More options</summary>
+        <div className="mt-3">
+          <Field
+            label="Result form fields"
+            htmlFor="resultFields"
+            hint="What staff fill in when they finish a request here, separated by commas, e.g. Findings, Recommendation."
+          >
+            <Input id="resultFields" name="resultFields" placeholder="Findings, Recommendation" />
+          </Field>
+        </div>
+      </details>
       <div className="flex justify-end">
-        <Button type="submit" loading={pending}>
-          {pending ? "Adding…" : "Add department"}
-        </Button>
+        <Button type="submit" loading={pending}>{pending ? "Adding…" : "Add department"}</Button>
       </div>
     </form>
   );

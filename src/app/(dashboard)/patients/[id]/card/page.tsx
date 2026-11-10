@@ -8,7 +8,10 @@ import { Logo } from "@/components/ui/Logo";
 export default async function PatientCardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
   const session = await requireSession();
-  const patient = await db.patient.findFirst({ where: { id, hospitalId: session.hospitalId }, include: { cardType: true } });
+  const patient = await db.patient.findFirst({
+    where: { id, hospitalId: session.hospitalId },
+    include: { cardType: true, identityLinks: { where: { hospitalId: session.hospitalId }, include: { identity: true }, take: 1 } },
+  });
   if (!patient) notFound();
 
   return (
@@ -43,6 +46,12 @@ export default async function PatientCardPage({ params }: { params: Promise<{ id
             <p className="text-[10px] font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Hospital Number</p>
             <p className="font-mono text-lg font-semibold tracking-wider text-[var(--color-text)]">{patient.hospitalNumber}</p>
           </div>
+          {patient.identityLinks[0] && (
+            <div className="rounded-md border border-[var(--color-brand)]/30 bg-[var(--color-brand-soft)] px-3 py-2">
+              <p className="text-[10px] font-medium tracking-wide text-[var(--color-brand)] uppercase">CareNexa ID · valid at every CareNexa hospital</p>
+              <p className="font-mono text-lg font-semibold tracking-wider text-[var(--color-text)]">{patient.identityLinks[0].identity.universalPatientNumber}</p>
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <p className="text-[10px] font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Card type</p>

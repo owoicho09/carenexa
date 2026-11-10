@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
-import { completeRequest, queryRequest } from "@/lib/requests";
+import { completeRequest, queryRequest, returnToSender } from "@/lib/requests";
 import { LAB_TEST_REFERENCE } from "@/lib/labReference";
 import { draftClinicalNote } from "@/lib/ai/noteAssist";
 import { isAiConfigured } from "@/lib/ai/client";
@@ -296,6 +296,9 @@ export async function completeRequestAction(_prev: ActionState, formData: FormDa
   if (!canHandleRequest(session, request.toDepartmentId)) return { error: "This request is not assigned to your department." };
 
   await completeRequest({ hospitalId: session.hospitalId, requestId, fulfilledById: session.staffId, outcomeSummary });
+  // Lab results go straight back to the department that asked for them.
+  const toDepartment = await db.department.findFirst({ where: { id: request.toDepartmentId, hospitalId: session.hospitalId }, select: { slug: true } });
+  if (toDepartment?.slug === "lab") await returnToSender({ hospitalId: session.hospitalId, requestId, actorId: session.staffId });
 
   const patient = await db.visit.findFirstOrThrow({ where: { id: request.visitId, hospitalId: session.hospitalId } });
   revalidateAfter(patient.patientId, requestId);

@@ -5,7 +5,7 @@ import { requireSession } from "@/lib/auth";
 
 export default async function NewStaffPage() {
   const session = await requireSession(["ADMIN"]);
-  const departments = await db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } });
+  const departments = await db.department.findMany({ where: { hospitalId: session.hospitalId, isArchived: false }, orderBy: { name: "asc" } });
 
   return (
     <div className="max-w-2xl space-y-6">
