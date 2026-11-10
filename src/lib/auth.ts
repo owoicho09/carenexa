@@ -6,6 +6,7 @@ import bcrypt from "bcryptjs";
 import { db } from "@/lib/db";
 import type { StaffRole } from "@/generated/prisma/enums";
 import { SESSION_COOKIE } from "@/lib/sessionConstants";
+import { canAccessHospital } from "@/lib/tenantAccess";
 
 export { SESSION_COOKIE };
 const SESSION_TTL_SECONDS = 60 * 60 * 12; // 12h shift-length session
@@ -20,6 +21,8 @@ export type SessionPayload = {
   staffId: string;
   fullName: string;
   role: StaffRole;
+  hospitalId: string;
+  isPlatformAdmin: boolean;
   departmentId: string | null;
   departmentSlug: string | null;
 };
@@ -52,10 +55,28 @@ export async function readSession(): Promise<SessionPayload | null> {
   if (!token) return null;
   try {
     const { payload } = await jwtVerify(token, secretKey());
-    // Sessions signed before departmentSlug existed are stale — force a fresh login
-    // rather than let workspace routing compute a route from a missing field.
-    if (!("departmentSlug" in payload)) return null;
-    return payload as unknown as SessionPayload;
+    if (typeof payload.staffId !== "string" || typeof payload.hospitalId !== "string") return null;
+
+    const staff = await db.staffMember.findUnique({
+      where: { id: payload.staffId },
+      include: { department: true },
+    });
+    if (!staff?.isActive) return null;
+
+    const hospital = await db.hospital.findUnique({ where: { id: payload.hospitalId } });
+    if (!hospital || !canAccessHospital({ hospitalId: staff.hospitalId, isPlatformAdmin: staff.isPlatformAdmin }, hospital.id, hospital.isActive)) return null;
+    if (!staff.isPlatformAdmin && staff.department && staff.department.hospitalId !== hospital.id) return null;
+    const department = staff.isPlatformAdmin ? null : staff.department;
+
+    return {
+      staffId: staff.id,
+      fullName: staff.fullName,
+      role: staff.role,
+      hospitalId: hospital.id,
+      isPlatformAdmin: staff.isPlatformAdmin,
+      departmentId: department?.id ?? null,
+      departmentSlug: department?.slug ?? null,
+    };
   } catch {
     return null;
   }

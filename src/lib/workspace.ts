@@ -10,7 +10,7 @@ import { getPendingRequestCountForDepartmentId } from "@/lib/queues";
 export async function requireDepartmentAccess(slug: string) {
   const session = await requireSession();
 
-  const department = await db.department.findUnique({ where: { slug } });
+  const department = await db.department.findFirst({ where: { slug, hospitalId: session.hospitalId } });
   if (!department) notFound();
 
   const isOwnDepartment = session.departmentSlug === slug;
@@ -20,7 +20,7 @@ export async function requireDepartmentAccess(slug: string) {
     redirect(homeRoute(session));
   }
 
-  const queueCount = await getPendingRequestCountForDepartmentId(department.id);
+  const queueCount = await getPendingRequestCountForDepartmentId(department.id, session.hospitalId);
 
   return { session, department, isAdminVisiting, queueCount };
 }

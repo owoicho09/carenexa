@@ -2,6 +2,7 @@ import "server-only";
 import { db } from "@/lib/db";
 
 export async function logAudit(input: {
+  hospitalId?: string;
   actorId: string;
   action: string;
   targetType: string;

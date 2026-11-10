@@ -25,9 +25,10 @@ export async function submitApplicationAction(_prev: ApplyState, formData: FormD
     return { error: "This vacancy is no longer accepting applications." };
   }
 
-  const candidate = await db.candidate.create({ data: { fullName, email, phone } });
+  const candidate = await db.candidate.create({ data: { hospitalId: vacancy.hospitalId, fullName, email, phone } });
   await db.application.create({
     data: {
+      hospitalId: vacancy.hospitalId,
       vacancyId,
       candidateId: candidate.id,
       cvFileName: file!.name,

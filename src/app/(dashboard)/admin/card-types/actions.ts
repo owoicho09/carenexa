@@ -11,7 +11,7 @@ export type CreateCardTypeState = { error?: string } | undefined;
 
 export async function createCardTypeAction(_prev: CreateCardTypeState, formData: FormData): Promise<CreateCardTypeState> {
   const session = await requireSession(["ADMIN"]);
-  const allowed = session.role === "ADMIN" || (await hasPermission(session.role, "CAN_MANAGE_CARD_TYPES"));
+  const allowed = session.role === "ADMIN" || (await hasPermission(session.role, "CAN_MANAGE_CARD_TYPES", session.hospitalId));
   if (!allowed) return { error: "Your role can't manage card types." };
 
   const name = String(formData.get("name") ?? "").trim();
@@ -21,12 +21,13 @@ export async function createCardTypeAction(_prev: CreateCardTypeState, formData:
   if (!name || !seriesCode || !description) return { error: "Fill in every field." };
   if (!/^[A-Z]{2,6}$/.test(seriesCode)) return { error: "Series code must be 2-6 letters (e.g. GOP, PVT)." };
 
-  const existing = await db.cardType.findUnique({ where: { seriesCode } });
+  const existing = await db.cardType.findFirst({ where: { seriesCode, hospitalId: session.hospitalId } });
   if (existing) return { error: `Series code "${seriesCode}" is already in use.` };
 
-  const cardType = await db.cardType.create({ data: { name, seriesCode, description } });
+  const cardType = await db.cardType.create({ data: { hospitalId: session.hospitalId, name, seriesCode, description } });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "CARD_TYPE_CREATED",
     targetType: "CardType",
@@ -48,9 +49,12 @@ export async function updateCardTypeAction(_prev: UpdateCardTypeState, formData:
 
   if (!name || !description) return { error: "Fill in every field." };
 
-  const cardType = await db.cardType.update({ where: { id: cardTypeId }, data: { name, description } });
+  const existing = await db.cardType.findFirst({ where: { id: cardTypeId, hospitalId: session.hospitalId } });
+  if (!existing) return { error: "Card type not found in this hospital." };
+  const cardType = await db.cardType.update({ where: { id: existing.id }, data: { name, description } });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "CARD_TYPE_EDITED",
     targetType: "CardType",

@@ -1,5 +1,7 @@
+import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
+import { requireSession } from "@/lib/auth";
 import { Panel } from "@/components/ui/Panel";
 import { Badge } from "@/components/ui/Badge";
 import type { Tone } from "@/components/ui/Badge";
@@ -10,12 +12,19 @@ import { OpenVisitButton } from "@/components/patient/OpenVisitButton";
 import { DeletePatientButton } from "@/components/patient/DeletePatientButton";
 import { BookAppointmentButton } from "@/components/patient/BookAppointmentButton";
 import { ComposeMessageButton } from "@/components/patient/ComposeMessageButton";
+import { IdentityVerificationForm } from "@/components/patient/IdentityVerificationForm";
+import { ReferralForm } from "@/components/referrals/ReferralForm";
+import { RequestRecordsForm } from "@/components/access/AccessRequestForms";
+import { accessGrantDisplayStatus, CATEGORY_LABEL } from "@/lib/tenantAccess";
 import { setAppointmentStatusAction } from "./actions";
 import { SubmitWithToast } from "@/components/ui/SubmitWithToast";
 import { AiSummaryPanel } from "@/components/ai/AiSummaryPanel";
 import { DocumentsPanel } from "@/components/ai/DocumentsPanel";
-import { isAiConfigured } from "@/lib/ai/client";
+import { ClinicalInsightsPanel } from "@/components/ai/ClinicalInsightsPanel";
+import { isAiConfigured, isOpenAiConfigured } from "@/lib/ai/client";
 import { getLatestHistorySummary } from "@/lib/ai/summary";
+import { loadSharedRecordsForPatient, type SharedRecord } from "@/lib/ai/clinicalInsights";
+import { CLINICAL_RULES_VERSION, deterministicFlags, describeDataGaps, type CoverageSource } from "@/lib/clinicalRules";
 
 function formatAge(dateOfBirth: Date) {
   const ms = Date.now() - dateOfBirth.getTime();
@@ -33,15 +42,30 @@ const requestStatusTone: Record<string, Tone> = {
   QUERIED: "danger",
 };
 
+const SHARED_RECORD_LABEL: Record<string, string> = {
+  PATIENT: "Demographics",
+  VISIT: "Visit",
+  VITALS: "Vitals",
+  LAB_RESULT: "Lab result",
+  DIAGNOSIS: "Diagnosis",
+  PRESCRIPTION: "Prescription",
+  CLINICAL_NOTE: "Clinical note",
+};
+
 export default async function PatientRecordPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await requireSession();
+  const hospitalId = session.hospitalId;
 
-  const [patient, departments, appointments, communications] = await Promise.all([
-    db.patient.findUnique({
-      where: { id },
+  // Every read is scoped to the session's hospital — knowing a patient ID from
+  // another hospital resolves to notFound(), never to that hospital's record.
+  const [patient, departments, appointments, communications, identityLink, inPersonVerification, insights] = await Promise.all([
+    db.patient.findFirst({
+      where: { id, hospitalId },
       include: {
         cardType: true,
         visits: {
+          where: { hospitalId },
           orderBy: { openedAt: "desc" },
           include: {
             openedBy: true,
@@ -51,28 +75,83 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
             diagnoses: { orderBy: { createdAt: "asc" }, include: { recordedBy: true } },
             prescriptions: { orderBy: { createdAt: "asc" }, include: { prescribedBy: true, dispensation: true } },
             requests: {
+              where: { hospitalId },
               orderBy: { createdAt: "asc" },
               include: { fromDepartment: true, toDepartment: true, requestedBy: true, fulfilledBy: true },
             },
             aiArtifacts: {
-              where: { type: { in: ["DISCHARGE_SUMMARY", "REFERRAL_LETTER"] } },
+              where: { hospitalId, type: { in: ["DISCHARGE_SUMMARY", "REFERRAL_LETTER"] } },
               orderBy: { createdAt: "desc" },
             },
           },
         },
       },
     }),
-    db.department.findMany({ where: { acceptsRequestTypes: { isEmpty: false } }, orderBy: { name: "asc" } }),
-    db.appointment.findMany({ where: { patientId: id, status: "SCHEDULED" }, orderBy: { scheduledFor: "asc" } }),
-    db.communication.findMany({ where: { patientId: id }, include: { sentBy: true }, orderBy: { sentAt: "desc" } }),
+    db.department.findMany({ where: { hospitalId, acceptsRequestTypes: { isEmpty: false } }, orderBy: { name: "asc" } }),
+    db.appointment.findMany({ where: { hospitalId, patientId: id, status: "SCHEDULED" }, orderBy: { scheduledFor: "asc" } }),
+    db.communication.findMany({ where: { hospitalId, patientId: id }, include: { sentBy: true }, orderBy: { sentAt: "desc" } }),
+    db.patientHospitalLink.findFirst({ where: { patientId: id, hospitalId }, include: { identity: true } }),
+    db.patientIdentityVerification.findFirst({
+      where: { patientId: id, hospitalId, status: "VERIFIED", revokedAt: null },
+      orderBy: { verifiedAt: "desc" },
+      include: { verifiedBy: { select: { fullName: true } } },
+    }),
+    db.clinicalInsight.findMany({
+      where: { hospitalId, patientId: id, dismissedAt: null },
+      orderBy: { createdAt: "desc" },
+      take: 20,
+      select: { id: true, type: true, title: true, summary: true, evidence: true, createdAt: true, requiresReview: true, model: true, provider: true, promptVersion: true },
+    }),
   ]);
 
   if (!patient) notFound();
 
-  const latestSummary = await getLatestHistorySummary(id);
+  const [latestSummary, referrals, destinationHospitals, shared, recordRequests] = await Promise.all([
+    getLatestHistorySummary(id, hospitalId),
+    identityLink
+      ? db.referral.findMany({
+          where: {
+            identityId: identityLink.identityId,
+            OR: [{ sourceHospitalId: hospitalId }, { destinationHospitalId: hospitalId }],
+          },
+          include: { sourceHospital: { select: { name: true } }, destinationHospital: { select: { name: true } } },
+          orderBy: { updatedAt: "desc" },
+          take: 20,
+        })
+      : Promise.resolve([]),
+    db.hospital.findMany({
+      where: { id: { not: hospitalId }, isActive: true },
+      select: { id: true, name: true },
+      orderBy: { name: "asc" },
+    }),
+    patient.isDeleted
+      ? Promise.resolve({ identityId: null, records: [] as SharedRecord[], sources: [] as CoverageSource[] })
+      : loadSharedRecordsForPatient(id, hospitalId, session.staffId),
+    identityLink
+      ? db.patientAccessGrant.findMany({
+          where: { identityId: identityLink.identityId, receivingHospitalId: hospitalId, referralId: null },
+          include: { sourceHospital: { select: { name: true } } },
+          orderBy: { createdAt: "desc" },
+          take: 10,
+        })
+      : Promise.resolve([]),
+  ]);
 
   const hasDangerInfo = patient.allergies.length > 0 || patient.genotype === "SS" || patient.genotype === "SC";
   const openVisit = patient.visits.find((v) => v.status === "OPEN");
+  const referralVisitId = openVisit?.id ?? patient.visits[0]?.id ?? "";
+  const identityVerifiedHere = Boolean(identityLink?.verificationStatus === "VERIFIED" && inPersonVerification);
+  const canVerifyIdentity = ["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST"].includes(session.role);
+  const canRefer = ["ADMIN", "CLINICIAN"].includes(session.role);
+  const canReviewInsights = ["ADMIN", "CLINICIAN"].includes(session.role);
+
+  const ruleFlags = deterministicFlags(patient);
+  const dataGaps = describeDataGaps({ patient, identityVerifiedHere, sources: shared.sources });
+
+  const sharedByHospital = new Map<string, SharedRecord[]>();
+  for (const record of shared.records) {
+    sharedByHospital.set(record.hospitalName, [...(sharedByHospital.get(record.hospitalName) ?? []), record]);
+  }
 
   // Result context: for each lab result, what this same test read on this patient
   // before now — so a value reads as a trend, not an isolated number.
@@ -131,6 +210,33 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
           )}
         </div>
 
+        {/* Universal CareNexa identity — the network ID, separate from this hospital's local number */}
+        <div className="mt-4 rounded-md border border-[var(--color-border)] px-3 py-3">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <p className="text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">CareNexa ID</p>
+              <p className="mt-0.5 font-mono text-sm text-[var(--color-text)]">
+                {identityLink?.identity.universalPatientNumber ?? "Not linked to a CareNexa identity"}
+              </p>
+            </div>
+            {identityLink && (
+              identityVerifiedHere ? (
+                <Badge tone="success">Identity verified in person</Badge>
+              ) : (
+                <Badge tone="warning">In-person verification pending</Badge>
+              )
+            )}
+          </div>
+          {inPersonVerification && (
+            <p className="mt-1 text-xs text-[var(--color-text-muted)]">
+              Verified by {inPersonVerification.verifiedBy.fullName} &middot; {formatDate(inPersonVerification.verifiedAt)}
+            </p>
+          )}
+          {identityLink && !identityVerifiedHere && !patient.isDeleted && canVerifyIdentity && (
+            <IdentityVerificationForm patientId={patient.id} />
+          )}
+        </div>
+
         <div className="mt-4 flex flex-wrap items-center justify-between gap-4 border-t border-[var(--color-border)] pt-4">
           <p className="text-sm text-[var(--color-text-muted)]">
             Next of kin: <span className="font-medium text-[var(--color-text)]">{patient.nextOfKinName}</span> ({patient.nextOfKinRelation}) &middot; {patient.nextOfKinPhone}
@@ -148,9 +254,136 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
         </div>
       </Panel>
 
-      <Panel className="p-5">
+      <Panel className="space-y-4 p-5">
         <AiSummaryPanel patientId={patient.id} aiConfigured={isAiConfigured()} initialSummary={latestSummary} />
+        <ClinicalInsightsPanel
+          patientId={patient.id}
+          aiConfigured={isOpenAiConfigured()}
+          canReview={canReviewInsights}
+          insights={insights}
+          ruleFlags={ruleFlags}
+          rulesVersion={CLINICAL_RULES_VERSION}
+          dataGaps={dataGaps}
+        />
       </Panel>
+
+      {/* Records from other hospitals — only rendered when consent + in-person verification allow it */}
+      {identityLink && (
+        <Panel className="border-l-4 border-l-[var(--color-brand)] p-5">
+          <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h2 className="text-sm font-semibold text-[var(--color-text)]">Records shared by other hospitals</h2>
+              <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
+                External records, read-only. Visible only with patient authorization and in-person identity verification here. Each view is audited.
+              </p>
+            </div>
+            <Badge tone="brand">External</Badge>
+          </div>
+          {!identityVerifiedHere ? (
+            <Empty>Verify this patient&rsquo;s identity in person to view records other hospitals have been authorized to share.</Empty>
+          ) : sharedByHospital.size === 0 ? (
+            <Empty>No other hospital currently has an active, patient-authorized grant to share records with this hospital.</Empty>
+          ) : (
+            <div className="space-y-4">
+              {[...sharedByHospital.entries()].map(([hospitalName, records]) => (
+                <div key={hospitalName}>
+                  <p className="mb-1.5 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">From {hospitalName}</p>
+                  <ul className="divide-y divide-[var(--color-border)] rounded-md border border-[var(--color-border)]">
+                    {records
+                      .slice()
+                      .sort((a, b) => b.recordedAt.localeCompare(a.recordedAt))
+                      .map((record) => (
+                        <li key={record.recordId} className="flex flex-wrap gap-x-3 gap-y-0.5 px-3 py-2 text-sm">
+                          <span className="w-28 shrink-0 text-xs font-medium text-[var(--color-text-muted)]">{SHARED_RECORD_LABEL[record.recordType] ?? record.recordType}</span>
+                          <span className="w-36 shrink-0 text-xs text-[var(--color-text-faint)]">{formatDate(new Date(record.recordedAt))}</span>
+                          <span className="min-w-0 flex-1 text-[var(--color-text)]">{record.fact}</span>
+                        </li>
+                      ))}
+                  </ul>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {recordRequests.length > 0 && (
+            <div className="mt-4 border-t border-[var(--color-border)] pt-3">
+              <p className="mb-1.5 text-xs font-medium tracking-wide text-[var(--color-text-faint)] uppercase">Record requests from this hospital</p>
+              <ul className="space-y-1">
+                {recordRequests.map((r) => (
+                  <li key={r.id} className="flex flex-wrap items-center justify-between gap-2 text-sm">
+                    <span className="text-[var(--color-text-muted)]">
+                      {r.sourceHospital.name} · {r.recordCategories.map((c) => CATEGORY_LABEL[c] ?? c).join(", ")} · {r.createdAt.toLocaleDateString("en-NG")}
+                    </span>
+                    <Badge tone={accessGrantDisplayStatus(r) === "ACTIVE" ? "success" : accessGrantDisplayStatus(r) === "PENDING" ? "warning" : "neutral"}>
+                      {accessGrantDisplayStatus(r)}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {identityVerifiedHere && canRefer && !patient.isDeleted && destinationHospitals.length > 0 && (
+            <details className="mt-4 border-t border-[var(--color-border)] pt-3">
+              <summary className="cursor-pointer text-sm font-medium text-[var(--color-brand)]">Request records from another hospital</summary>
+              <p className="mt-2 mb-3 text-xs text-[var(--color-text-muted)]">
+                The other hospital reviews the request and releases only what the patient authorized, for a limited period.
+              </p>
+              <RequestRecordsForm patientId={patient.id} hospitals={destinationHospitals} />
+            </details>
+          )}
+        </Panel>
+      )}
+
+      {/* CareNexa Connect — inter-hospital referrals for this patient */}
+      {identityLink && (referrals.length > 0 || (canRefer && !patient.isDeleted && destinationHospitals.length > 0)) && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <Panel className="p-5">
+            <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Inter-hospital referrals</h2>
+            {referrals.length === 0 ? (
+              <Empty>No referrals for this patient yet.</Empty>
+            ) : (
+              <ul className="space-y-2">
+                {referrals.map((r) => (
+                  <li key={r.id}>
+                    <Link
+                      href={`/referrals/${r.id}`}
+                      className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-[var(--color-border)] px-3 py-2 text-sm hover:bg-[var(--color-page)]"
+                    >
+                      <div className="min-w-0">
+                        <p className="font-medium text-[var(--color-text)]">{r.requestedService}</p>
+                        <p className="text-xs text-[var(--color-text-muted)]">
+                          {r.sourceHospitalId === hospitalId ? `Outgoing to ${r.destinationHospital.name}` : `Incoming from ${r.sourceHospital.name}`} &middot; {r.createdAt.toLocaleDateString("en-NG")}
+                        </p>
+                      </div>
+                      <span className="flex flex-wrap items-center gap-1.5">
+                        {(() => {
+                          const info = r.clinicalInformation && typeof r.clinicalInformation === "object" && !Array.isArray(r.clinicalInformation) ? r.clinicalInformation as Record<string, unknown> : {};
+                          const report = info.counterReferral && typeof info.counterReferral === "object" ? info.counterReferral as { incorporatedAt?: string } : null;
+                          if (!report || r.sourceHospitalId !== hospitalId) return null;
+                          return <Badge tone={report.incorporatedAt ? "success" : "warning"}>{report.incorporatedAt ? "Report stored" : "Report received"}</Badge>;
+                        })()}
+                        <Badge tone={r.status === "COMPLETED" ? "success" : r.status === "DECLINED" ? "danger" : "brand"}>
+                          {r.status.replaceAll("_", " ")}
+                        </Badge>
+                      </span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            )}
+          </Panel>
+          {canRefer && !patient.isDeleted && destinationHospitals.length > 0 && (
+            <Panel className="p-5">
+              <h2 className="mb-1 text-sm font-semibold text-[var(--color-text)]">Refer to another hospital</h2>
+              <p className="mb-4 text-xs text-[var(--color-text-muted)]">
+                Creates a draft. No records are shared until the patient&rsquo;s authorization is recorded on the referral.
+              </p>
+              <ReferralForm patientId={patient.id} visitId={referralVisitId} hospitals={destinationHospitals} />
+            </Panel>
+          )}
+        </div>
+      )}
 
       {appointments.length > 0 && (
         <Panel className="p-5">
@@ -217,9 +450,9 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
         </div>
       )}
 
-      {/* Visits, reverse chronological */}
+      {/* Visits at this hospital, reverse chronological */}
       <div className="space-y-4">
-        <h2 className="text-sm font-semibold text-[var(--color-text)]">Visits ({patient.visits.length})</h2>
+        <h2 className="text-sm font-semibold text-[var(--color-text)]">Visits at this hospital ({patient.visits.length})</h2>
 
         {patient.visits.length === 0 ? (
           <Panel className="p-6 text-sm text-[var(--color-text-muted)]">No visits recorded yet.</Panel>
@@ -395,6 +628,7 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
                         <p className="whitespace-pre-wrap text-[var(--color-text)]">{n.content}</p>
                         <p className="mt-0.5 text-xs text-[var(--color-text-muted)]">
                           {n.author.fullName} &middot; {formatDate(n.createdAt)}
+                          {n.isAiAssisted && !n.signedAt && " · Unsigned — awaiting clinician review"}
                         </p>
                       </div>
                     ))

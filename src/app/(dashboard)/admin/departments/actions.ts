@@ -25,7 +25,7 @@ export async function createDepartmentAction(
   }
 
   const slug = slugify(name);
-  const existing = await db.department.findUnique({ where: { slug } });
+  const existing = await db.department.findFirst({ where: { slug, hospitalId: session.hospitalId } });
   if (existing) {
     return { error: `A department named "${name}" already exists.` };
   }
@@ -40,6 +40,7 @@ export async function createDepartmentAction(
 
   const department = await db.department.create({
     data: {
+      hospitalId: session.hospitalId,
       name,
       slug,
       description,
@@ -55,6 +56,7 @@ export async function createDepartmentAction(
   });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "DEPARTMENT_CREATED",
     targetType: "Department",
@@ -88,8 +90,11 @@ export async function updateDepartmentAction(
     ? resultFieldsRaw.split(",").map((f) => f.trim()).filter(Boolean)
     : [];
 
+  const existing = await db.department.findFirst({ where: { id: departmentId, hospitalId: session.hospitalId } });
+  if (!existing) return { error: "Department not found in this hospital." };
+
   const department = await db.department.update({
-    where: { id: departmentId },
+    where: { id: existing.id },
     data: {
       description,
       acceptsRequestTypes,
@@ -104,6 +109,7 @@ export async function updateDepartmentAction(
   });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "DEPARTMENT_EDITED",
     targetType: "Department",

@@ -7,15 +7,15 @@ import type { StaffRole } from "@/generated/prisma/enums";
 import type { PermissionKey } from "@/lib/permissions";
 
 export async function setRolePermissionAction(formData: FormData) {
-  await requireSession(["ADMIN"]);
+  const session = await requireSession(["ADMIN"]);
   const role = String(formData.get("role") ?? "") as StaffRole;
   const permission = String(formData.get("permission") ?? "") as PermissionKey;
   const enabled = formData.get("enabled") === "true";
 
   await db.rolePermission.upsert({
-    where: { role_permission: { role, permission } },
+    where: { hospitalId_role_permission: { hospitalId: session.hospitalId, role, permission } },
     update: { enabled },
-    create: { role, permission, enabled },
+    create: { hospitalId: session.hospitalId, role, permission, enabled },
   });
 
   revalidatePath("/admin/permissions");

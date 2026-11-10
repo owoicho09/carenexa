@@ -26,15 +26,19 @@ export async function createStaffAction(_prev: CreateStaffState, formData: FormD
 
   const existing = await db.staffMember.findUnique({ where: { email } });
   if (existing) return { error: `${email} is already in use.` };
+  if (departmentId && !(await db.department.findFirst({ where: { id: departmentId, hospitalId: session.hospitalId } }))) {
+    return { error: "Choose a department in this hospital." };
+  }
 
   const tempPassword = crypto.randomBytes(6).toString("base64url");
   const passwordHash = await bcrypt.hash(tempPassword, 10);
 
   const staff = await db.staffMember.create({
-    data: { fullName, email, passwordHash, role, jobTitle, departmentId },
+    data: { fullName, email, passwordHash, role, jobTitle, departmentId, hospitalId: session.hospitalId },
   });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "STAFF_CREATED",
     targetType: "StaffMember",
@@ -59,13 +63,20 @@ export async function updateStaffAction(_prev: UpdateStaffState, formData: FormD
   const departmentId = String(formData.get("departmentId") ?? "") || null;
 
   if (!fullName || !role || !jobTitle) return { error: "Fill in name, role, and job title." };
+  if (departmentId && !(await db.department.findFirst({ where: { id: departmentId, hospitalId: session.hospitalId } }))) {
+    return { error: "Choose a department in this hospital." };
+  }
+
+  const existing = await db.staffMember.findFirst({ where: { id: staffId, hospitalId: session.hospitalId } });
+  if (!existing) return { error: "Staff member not found in this hospital." };
 
   await db.staffMember.update({
-    where: { id: staffId },
+    where: { id: existing.id },
     data: { fullName, role, jobTitle, departmentId },
   });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "STAFF_EDITED",
     targetType: "StaffMember",
@@ -82,9 +93,12 @@ export async function toggleStaffActiveAction(formData: FormData) {
   const staffId = String(formData.get("staffId") ?? "");
   const isActive = formData.get("isActive") === "true";
 
-  const staff = await db.staffMember.update({ where: { id: staffId }, data: { isActive } });
+  const existing = await db.staffMember.findFirst({ where: { id: staffId, hospitalId: session.hospitalId } });
+  if (!existing) return;
+  const staff = await db.staffMember.update({ where: { id: existing.id }, data: { isActive } });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: isActive ? "STAFF_REACTIVATED" : "STAFF_DEACTIVATED",
     targetType: "StaffMember",

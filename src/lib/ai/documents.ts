@@ -2,9 +2,9 @@ import "server-only";
 import { db } from "@/lib/db";
 import { generateText, AI_MODEL_FAST, isAiConfigured } from "@/lib/ai/client";
 
-async function loadVisitContext(visitId: string) {
+async function loadVisitContext(visitId: string, hospitalId: string) {
   return db.visit.findUnique({
-    where: { id: visitId },
+    where: { id: visitId, hospitalId },
     include: {
       patient: true,
       vitals: true,
@@ -36,10 +36,10 @@ function formatVisitForPrompt(visit: NonNullable<Awaited<ReturnType<typeof loadV
   return lines.join("\n");
 }
 
-async function generateDocument(visitId: string, type: "DISCHARGE_SUMMARY" | "REFERRAL_LETTER", system: string, extraPrompt = "") {
+async function generateDocument(visitId: string, hospitalId: string, actorId: string, type: "DISCHARGE_SUMMARY" | "REFERRAL_LETTER", system: string, extraPrompt = "") {
   if (!isAiConfigured()) return { text: null, reason: "AI is not configured (ANTHROPIC_API_KEY missing)." as const };
 
-  const visit = await loadVisitContext(visitId);
+  const visit = await loadVisitContext(visitId, hospitalId);
   if (!visit) return { text: null, reason: "Visit not found." as const };
 
   const prompt = `${formatVisitForPrompt(visit)}${extraPrompt ? `\n\n${extraPrompt}` : ""}`;
@@ -47,9 +47,13 @@ async function generateDocument(visitId: string, type: "DISCHARGE_SUMMARY" | "RE
 
   const artifact = await db.aiArtifact.create({
     data: {
+      hospitalId,
       type,
       visitId,
       model: AI_MODEL_FAST,
+      provider: "ANTHROPIC",
+      generatedById: actorId,
+      promptVersion: type === "DISCHARGE_SUMMARY" ? "discharge-summary-v1" : "referral-letter-v1",
       input: { prompt },
       output: { text },
       requiresApproval: true,
@@ -59,9 +63,11 @@ async function generateDocument(visitId: string, type: "DISCHARGE_SUMMARY" | "RE
   return { text, artifactId: artifact.id, reason: null };
 }
 
-export async function generateDischargeSummary(visitId: string) {
+export async function generateDischargeSummary(visitId: string, hospitalId: string, actorId: string) {
   return generateDocument(
     visitId,
+    hospitalId,
+    actorId,
     "DISCHARGE_SUMMARY",
     `You write a discharge summary from a hospital visit record for the patient's file and for their own
 copy. Only state what's in the record — no invented findings, no new instructions beyond what was recorded.
@@ -70,9 +76,11 @@ draft will be reviewed and approved by a clinician before it's issued.`
   );
 }
 
-export async function generateReferralLetter(visitId: string, referralReason: string, referredTo: string) {
+export async function generateReferralLetter(visitId: string, hospitalId: string, actorId: string, referralReason: string, referredTo: string) {
   return generateDocument(
     visitId,
+    hospitalId,
+    actorId,
     "REFERRAL_LETTER",
     `You write a referral letter from one clinician to another (or to another facility), based on a hospital
 visit record. Formal letter tone, addressed generically ("Dear Colleague") unless a name is given. Only state

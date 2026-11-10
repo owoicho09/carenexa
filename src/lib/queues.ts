@@ -1,11 +1,11 @@
 import { db } from "@/lib/db";
 
-export async function getPendingRequestsForDepartmentSlug(slug: string) {
-  const department = await db.department.findUnique({ where: { slug } });
+export async function getPendingRequestsForDepartmentSlug(slug: string, hospitalId: string) {
+  const department = await db.department.findFirst({ where: { slug, hospitalId } });
   if (!department) return [];
 
   return db.request.findMany({
-    where: { toDepartmentId: department.id, status: { in: ["PENDING", "QUERIED"] } },
+    where: { hospitalId, toDepartmentId: department.id, status: { in: ["PENDING", "QUERIED"] } },
     include: {
       visit: { include: { patient: true } },
       fromDepartment: true,
@@ -15,6 +15,6 @@ export async function getPendingRequestsForDepartmentSlug(slug: string) {
   });
 }
 
-export async function getPendingRequestCountForDepartmentId(departmentId: string) {
-  return db.request.count({ where: { toDepartmentId: departmentId, status: { in: ["PENDING", "QUERIED"] } } });
+export async function getPendingRequestCountForDepartmentId(departmentId: string, hospitalId: string) {
+  return db.request.count({ where: { hospitalId, toDepartmentId: departmentId, status: { in: ["PENDING", "QUERIED"] } } });
 }

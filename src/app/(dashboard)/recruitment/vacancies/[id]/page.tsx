@@ -19,11 +19,11 @@ const stageTone: Record<string, Tone> = {
 };
 
 export default async function VacancyDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
   const { id } = await params;
 
-  const vacancy = await db.vacancy.findUnique({
-    where: { id },
+  const vacancy = await db.vacancy.findFirst({
+    where: { id, hospitalId: session.hospitalId },
     include: {
       department: true,
       applications: { include: { candidate: true }, orderBy: { screeningScore: "desc" } },

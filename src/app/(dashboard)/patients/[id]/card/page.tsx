@@ -2,11 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { PrintButton } from "@/components/patient/PrintButton";
+import { requireSession } from "@/lib/auth";
 import { Logo } from "@/components/ui/Logo";
 
 export default async function PatientCardPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const patient = await db.patient.findUnique({ where: { id }, include: { cardType: true } });
+  const session = await requireSession();
+  const patient = await db.patient.findFirst({ where: { id, hospitalId: session.hospitalId }, include: { cardType: true } });
   if (!patient) notFound();
 
   return (

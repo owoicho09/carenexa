@@ -11,9 +11,9 @@ read in about fifteen seconds: relevant ongoing conditions, current medications,
 wrong direction across visits, allergies, and anything overdue (e.g. a missed follow-up date). Be concrete
 and reference actual values/dates from the record where useful.`;
 
-async function loadPatientHistory(patientId: string) {
+async function loadPatientHistory(patientId: string, hospitalId: string) {
   return db.patient.findUnique({
-    where: { id: patientId },
+    where: { id: patientId, hospitalId },
     include: {
       visits: {
         orderBy: { openedAt: "asc" },
@@ -47,12 +47,12 @@ function formatHistoryForPrompt(patient: NonNullable<Awaited<ReturnType<typeof l
   return `${header}\n\n${visitLines.join("\n\n") || "No visits recorded yet."}`;
 }
 
-export async function generateHistorySummary(patientId: string) {
+export async function generateHistorySummary(patientId: string, hospitalId: string, actorId: string) {
   if (!isAiConfigured()) {
     return { text: null, reason: "AI is not configured (ANTHROPIC_API_KEY missing)." as const };
   }
 
-  const patient = await loadPatientHistory(patientId);
+  const patient = await loadPatientHistory(patientId, hospitalId);
   if (!patient) return { text: null, reason: "Patient not found." as const };
 
   const latestVisit = patient.visits.at(-1);
@@ -67,10 +67,14 @@ export async function generateHistorySummary(patientId: string) {
 
   await db.aiArtifact.create({
     data: {
+      hospitalId,
       type: "HISTORY_SUMMARY",
       visitId: latestVisit?.id,
       model: AI_MODEL_FAST,
-      input: { prompt: promptInput },
+      provider: "ANTHROPIC",
+      generatedById: actorId,
+      promptVersion: "history-summary-v1",
+      input: { prompt: promptInput, patientId, visitIds: patient.visits.map((visit) => visit.id) },
       output: { text },
       requiresApproval: false,
     },
@@ -79,9 +83,9 @@ export async function generateHistorySummary(patientId: string) {
   return { text, reason: null };
 }
 
-export async function getLatestHistorySummary(patientId: string) {
+export async function getLatestHistorySummary(patientId: string, hospitalId: string) {
   const artifact = await db.aiArtifact.findFirst({
-    where: { type: "HISTORY_SUMMARY", visit: { patientId } },
+    where: { hospitalId, type: "HISTORY_SUMMARY", visit: { patientId, hospitalId } },
     orderBy: { createdAt: "desc" },
   });
   if (!artifact) return null;

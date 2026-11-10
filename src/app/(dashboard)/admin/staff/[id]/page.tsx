@@ -5,12 +5,14 @@ import { Badge } from "@/components/ui/Badge";
 import { EditStaffForm } from "./EditStaffForm";
 import { toggleStaffActiveAction } from "../actions";
 import { ToastButton } from "@/components/ui/SubmitWithToast";
+import { requireSession } from "@/lib/auth";
 
 export default async function StaffDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await requireSession(["ADMIN"]);
   const [staff, departments] = await Promise.all([
-    db.staffMember.findUnique({ where: { id } }),
-    db.department.findMany({ orderBy: { name: "asc" } }),
+    db.staffMember.findFirst({ where: { id, hospitalId: session.hospitalId } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
   ]);
 
   if (!staff) notFound();

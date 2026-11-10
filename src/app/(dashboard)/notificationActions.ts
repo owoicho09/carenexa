@@ -25,6 +25,7 @@ export async function getNotificationFeed(): Promise<NotificationFeed> {
   const session = await requireSession();
 
   const scope = {
+    hospitalId: session.hospitalId,
     OR: [
       ...(session.departmentId ? [{ departmentId: session.departmentId }] : []),
       { staffId: session.staffId },
@@ -34,7 +35,7 @@ export async function getNotificationFeed(): Promise<NotificationFeed> {
   const [unreadCount, notifications, queueCount, staff] = await Promise.all([
     db.notification.count({ where: { ...scope, readAt: null } }),
     db.notification.findMany({ where: scope, orderBy: { createdAt: "desc" }, take: 20 }),
-    session.departmentId ? getPendingRequestCountForDepartmentId(session.departmentId) : Promise.resolve(0),
+    session.departmentId ? getPendingRequestCountForDepartmentId(session.departmentId, session.hospitalId) : Promise.resolve(0),
     db.staffMember.findUnique({ where: { id: session.staffId }, select: { toastNotificationsEnabled: true } }),
   ]);
 
@@ -54,14 +55,25 @@ export async function getNotificationFeed(): Promise<NotificationFeed> {
 }
 
 export async function markNotificationReadAction(notificationId: string) {
-  await requireSession();
-  await db.notification.update({ where: { id: notificationId }, data: { readAt: new Date() } });
+  const session = await requireSession();
+  await db.notification.updateMany({
+    where: {
+      id: notificationId,
+      hospitalId: session.hospitalId,
+      OR: [
+        ...(session.departmentId ? [{ departmentId: session.departmentId }] : []),
+        { staffId: session.staffId },
+      ],
+    },
+    data: { readAt: new Date() },
+  });
 }
 
 export async function markAllNotificationsReadAction() {
   const session = await requireSession();
   await db.notification.updateMany({
     where: {
+      hospitalId: session.hospitalId,
       readAt: null,
       OR: [
         ...(session.departmentId ? [{ departmentId: session.departmentId }] : []),

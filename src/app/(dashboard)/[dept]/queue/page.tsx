@@ -5,8 +5,8 @@ import { QueueTable } from "@/components/queue/QueueTable";
 
 export default async function DepartmentQueuePage({ params }: { params: Promise<{ dept: string }> }) {
   const { dept } = await params;
-  const { department } = await requireDepartmentAccess(dept);
-  const requests = await getPendingRequestsForDepartmentSlug(dept);
+  const { session, department } = await requireDepartmentAccess(dept);
+  const requests = await getPendingRequestsForDepartmentSlug(dept, session.hospitalId);
 
   return (
     <div className="space-y-6">

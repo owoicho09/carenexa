@@ -21,16 +21,16 @@ const stageTone: Record<string, Tone> = {
 };
 
 export default async function ApplicationDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
   const { id } = await params;
 
   const [application, departments, screeningArtifact] = await Promise.all([
-    db.application.findUnique({
-      where: { id },
+    db.application.findFirst({
+      where: { id, hospitalId: session.hospitalId },
       include: { candidate: true, vacancy: { include: { department: true } }, interview: true },
     }),
-    db.department.findMany({ orderBy: { name: "asc" } }),
-    db.aiArtifact.findFirst({ where: { applicationId: id, type: "CV_SCREENING" }, orderBy: { createdAt: "desc" } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
+    db.aiArtifact.findFirst({ where: { hospitalId: session.hospitalId, applicationId: id, type: "CV_SCREENING" }, orderBy: { createdAt: "desc" } }),
   ]);
 
   if (!application) notFound();

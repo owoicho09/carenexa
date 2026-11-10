@@ -19,14 +19,14 @@ function timeAgo(date: Date) {
 
 export default async function DepartmentOverviewPage({ params }: { params: Promise<{ dept: string }> }) {
   const { dept } = await params;
-  const { department } = await requireDepartmentAccess(dept);
+  const { session, department } = await requireDepartmentAccess(dept);
 
   const startOfToday = new Date();
   startOfToday.setHours(0, 0, 0, 0);
 
   const [pending, completedToday] = await Promise.all([
-    getPendingRequestsForDepartmentSlug(dept),
-    db.request.count({ where: { toDepartmentId: department.id, status: "COMPLETED", completedAt: { gte: startOfToday } } }),
+    getPendingRequestsForDepartmentSlug(dept, session.hospitalId),
+    db.request.count({ where: { hospitalId: session.hospitalId, toDepartmentId: department.id, status: "COMPLETED", completedAt: { gte: startOfToday } } }),
   ]);
 
   const urgentCount = pending.filter((r) => r.urgency !== "ROUTINE").length;

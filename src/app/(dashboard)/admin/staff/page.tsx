@@ -6,9 +6,12 @@ import { LinkButton } from "@/components/ui/Button";
 import { ROLE_LABEL } from "@/lib/nav";
 import { toggleStaffActiveAction } from "./actions";
 import { SubmitWithToast } from "@/components/ui/SubmitWithToast";
+import { requireSession } from "@/lib/auth";
 
 export default async function StaffPage() {
+  const session = await requireSession(["ADMIN"]);
   const staff = await db.staffMember.findMany({
+    where: { hospitalId: session.hospitalId },
     include: { department: true },
     orderBy: [{ isActive: "desc" }, { fullName: "asc" }],
   });

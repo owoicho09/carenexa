@@ -10,8 +10,8 @@ export async function GET(_req: Request, { params }: { params: Promise<{ id: str
   }
 
   const { id } = await params;
-  const application = await db.application.findUnique({
-    where: { id },
+  const application = await db.application.findFirst({
+    where: { id, hospitalId: session.hospitalId },
     select: { cvFileData: true, cvFileName: true, cvFileMimeType: true },
   });
   if (!application?.cvFileData) return NextResponse.json({ error: "No CV file on this application." }, { status: 404 });

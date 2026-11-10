@@ -8,11 +8,11 @@ and may override it. Score strictly against the requirements given, not general 
 ONLY a JSON object, no markdown fences, no commentary: {"score": <integer 0-100>, "reasoning": "<2-4 sentences
 citing specific requirements met or missed>"}.`;
 
-export async function screenApplication(applicationId: string) {
+export async function screenApplication(applicationId: string, hospitalId: string, actorId: string) {
   if (!isAiConfigured()) return { error: "AI is not configured (ANTHROPIC_API_KEY missing)." as const };
 
   const application = await db.application.findUnique({
-    where: { id: applicationId },
+    where: { id: applicationId, hospitalId },
     include: { vacancy: true, candidate: true },
   });
   if (!application) return { error: "Application not found." as const };
@@ -52,9 +52,13 @@ export async function screenApplication(applicationId: string) {
 
   await db.aiArtifact.create({
     data: {
+      hospitalId,
       type: "CV_SCREENING",
       applicationId,
       model: AI_MODEL_REASONING,
+      provider: "ANTHROPIC",
+      generatedById: actorId,
+      promptVersion: "cv-screen-v1",
       input: { roleContext },
       output: parsed,
       requiresApproval: true,
@@ -62,7 +66,7 @@ export async function screenApplication(applicationId: string) {
   });
 
   await db.application.update({
-    where: { id: applicationId },
+    where: { id: applicationId, hospitalId },
     data: {
       screeningScore: parsed.score,
       screeningReasoning: parsed.reasoning,

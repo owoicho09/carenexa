@@ -9,14 +9,15 @@ import { requireSession } from "@/lib/auth";
 const statusTone: Record<string, Tone> = { DRAFT: "neutral", PUBLISHED: "success", CLOSED: "warning" };
 
 export default async function RecruitmentPage() {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
 
   const [vacancies, departments] = await Promise.all([
     db.vacancy.findMany({
+      where: { hospitalId: session.hospitalId },
       orderBy: { createdAt: "desc" },
       include: { department: true, _count: { select: { applications: true } } },
     }),
-    db.department.findMany({ orderBy: { name: "asc" } }),
+    db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
   ]);
 
   return (

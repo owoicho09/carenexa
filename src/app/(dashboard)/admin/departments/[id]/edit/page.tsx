@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader, Panel } from "@/components/ui/Panel";
 import { EditDepartmentForm } from "./EditDepartmentForm";
+import { requireSession } from "@/lib/auth";
 
 export default async function EditDepartmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const department = await db.department.findUnique({ where: { id } });
+  const session = await requireSession(["ADMIN"]);
+  const department = await db.department.findFirst({ where: { id, hospitalId: session.hospitalId } });
   if (!department) notFound();
 
   const resultFieldLabels = ((department.resultFields as { fields?: { label: string }[] })?.fields ?? [])

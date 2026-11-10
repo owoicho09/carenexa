@@ -82,7 +82,7 @@ export async function runAgentLoop(
       }
 
       if (spec.mutating) {
-        const summary = spec.describe ? await spec.describe(input) : `${block.name}(${JSON.stringify(input)})`;
+        const summary = spec.describe ? await spec.describe(session, input) : `${block.name}(${JSON.stringify(input)})`;
         // Pause here — remaining tool_use blocks in this same turn (if any) are left
         // unresolved; the confirm step re-enters the loop with this result merged in.
         return {

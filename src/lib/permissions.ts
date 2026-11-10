@@ -14,8 +14,8 @@ export type PermissionKey = (typeof PERMISSIONS)[number]["key"];
 
 // ADMIN always has every permission, regardless of what's stored — the table
 // only governs which OTHER roles get elevated access.
-export async function hasPermission(role: StaffRole, permission: PermissionKey): Promise<boolean> {
+export async function hasPermission(role: StaffRole, permission: PermissionKey, hospitalId: string): Promise<boolean> {
   if (role === "ADMIN") return true;
-  const row = await db.rolePermission.findUnique({ where: { role_permission: { role, permission } } });
+  const row = await db.rolePermission.findUnique({ where: { hospitalId_role_permission: { hospitalId, role, permission } } });
   return row?.enabled ?? false;
 }

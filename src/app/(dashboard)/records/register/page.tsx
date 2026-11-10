@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
 import { PageHeader, Panel } from "@/components/ui/Panel";
 import { RegisterForm } from "./RegisterForm";
+import { requireSession } from "@/lib/auth";
 
 export default async function RegisterPatientPage() {
-  const cardTypes = await db.cardType.findMany({ orderBy: { name: "asc" } });
+  const session = await requireSession();
+  const cardTypes = await db.cardType.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } });
 
   return (
     <div className="max-w-3xl space-y-6">

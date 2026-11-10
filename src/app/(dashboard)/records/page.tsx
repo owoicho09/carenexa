@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/Field";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { QuickActionsBar } from "./QuickActionsBar";
+import { requireSession } from "@/lib/auth";
 
 function formatAge(dateOfBirth: Date) {
   const ms = Date.now() - dateOfBirth.getTime();
@@ -16,12 +17,14 @@ export default async function RecordsPage({
 }: {
   searchParams: Promise<{ q?: string }>;
 }) {
+  const session = await requireSession();
   const { q } = await searchParams;
   const query = q?.trim();
 
   const patients = query
     ? await db.patient.findMany({
         where: {
+          hospitalId: session.hospitalId,
           isDeleted: false,
           OR: [
             { fullName: { contains: query, mode: "insensitive" } },
@@ -36,14 +39,14 @@ export default async function RecordsPage({
     : [];
 
   const recentVisits = await db.visit.findMany({
-    where: { status: "OPEN" },
+    where: { hospitalId: session.hospitalId, status: "OPEN" },
     include: { patient: { include: { cardType: true } } },
     orderBy: { openedAt: "desc" },
     take: 10,
   });
 
   const departments = await db.department.findMany({
-    where: { acceptsRequestTypes: { isEmpty: false } },
+    where: { hospitalId: session.hospitalId, acceptsRequestTypes: { isEmpty: false } },
     orderBy: { name: "asc" },
   });
 

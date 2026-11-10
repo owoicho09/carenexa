@@ -1,8 +1,10 @@
+import { computePilotMetrics } from "@/lib/pilotMetrics";
 import Link from "next/link";
 import { db } from "@/lib/db";
 import { PageHeader, Panel, PanelHeader } from "@/components/ui/Panel";
 import { Badge } from "@/components/ui/Badge";
 import type { Tone } from "@/components/ui/Badge";
+import { requireSession } from "@/lib/auth";
 
 function StatCard({ label, value, tone }: { label: string; value: number | string; tone?: Tone }) {
   return (
@@ -28,25 +30,26 @@ function timeAgo(date: Date) {
 }
 
 export default async function AdminOverviewPage() {
+  const session = await requireSession(["ADMIN"]);
   const [patientCount, openVisits, staffCount, departments, recentPatients, staleRequests] = await Promise.all([
-    db.patient.count(),
+    db.patient.count({ where: { hospitalId: session.hospitalId } }),
     db.visit.findMany({
-      where: { status: "OPEN" },
+      where: { hospitalId: session.hospitalId, status: "OPEN" },
       include: {
         patient: true,
         requests: { orderBy: { createdAt: "desc" }, take: 1, include: { toDepartment: true } },
       },
       orderBy: { openedAt: "desc" },
     }),
-    db.staffMember.count({ where: { isActive: true } }),
+    db.staffMember.count({ where: { hospitalId: session.hospitalId, isActive: true } }),
     db.department.findMany({
-      where: { slug: { notIn: ["administration"] } },
+      where: { hospitalId: session.hospitalId, slug: { notIn: ["administration"] } },
       orderBy: { name: "asc" },
       include: { _count: { select: { staff: true } } },
     }),
-    db.patient.findMany({ orderBy: { registeredAt: "desc" }, take: 5, include: { cardType: true } }),
+    db.patient.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { registeredAt: "desc" }, take: 5, include: { cardType: true } }),
     db.request.findMany({
-      where: { status: { in: ["PENDING", "QUERIED"] }, createdAt: { lt: hoursAgo(2) } },
+      where: { hospitalId: session.hospitalId, status: { in: ["PENDING", "QUERIED"] }, createdAt: { lt: hoursAgo(2) } },
       include: { visit: { include: { patient: true } }, toDepartment: true },
       orderBy: { createdAt: "asc" },
       take: 8,
@@ -58,12 +61,22 @@ export default async function AdminOverviewPage() {
       .filter((d) => d.acceptsRequestTypes.length > 0)
       .map(async (d) => ({
         department: d,
-        pending: await db.request.count({ where: { toDepartmentId: d.id, status: { in: ["PENDING", "QUERIED"] } } }),
+        pending: await db.request.count({ where: { hospitalId: session.hospitalId, toDepartmentId: d.id, status: { in: ["PENDING", "QUERIED"] } } }),
         urgent: await db.request.count({
-          where: { toDepartmentId: d.id, status: { in: ["PENDING", "QUERIED"] }, urgency: { not: "ROUTINE" } },
+          where: { hospitalId: session.hospitalId, toDepartmentId: d.id, status: { in: ["PENDING", "QUERIED"] }, urgency: { not: "ROUTINE" } },
         }),
       }))
   );
+
+  const referrals = await db.referral.findMany({
+    where: { OR: [{ sourceHospitalId: session.hospitalId }, { destinationHospitalId: session.hospitalId }] },
+    select: { id: true, sourceHospitalId: true, destinationHospitalId: true, submittedAt: true, status: true, events: { select: { status: true, createdAt: true } } },
+  });
+  const pilotMetrics = computePilotMetrics(referrals, session.hospitalId);
+  const OPEN_STATUSES = ["SUBMITTED", "ACKNOWLEDGED", "UNDER_REVIEW", "ACCEPTED", "APPOINTMENT_SCHEDULED", "ARRIVAL_CONFIRMED", "TREATMENT_IN_PROGRESS", "DISCHARGED"];
+  const incomingOpen = referrals.filter((r) => r.destinationHospitalId === session.hospitalId && OPEN_STATUSES.includes(r.status)).length;
+  const incomingNew = referrals.filter((r) => r.destinationHospitalId === session.hospitalId && r.status === "SUBMITTED").length;
+  const outgoingOpen = referrals.filter((r) => r.sourceHospitalId === session.hospitalId && [...OPEN_STATUSES, "DRAFT", "MORE_INFORMATION_REQUESTED", "COUNTER_REFERRAL_SUBMITTED"].includes(r.status)).length;
 
   return (
     <div className="space-y-6">
@@ -75,6 +88,31 @@ export default async function AdminOverviewPage() {
         <StatCard label="Active staff" value={staffCount} />
         <StatCard label="Needs attention" value={staleRequests.length} tone={staleRequests.length > 0 ? "danger" : undefined} />
       </div>
+
+      <Link
+        href="/referrals"
+        className={`flex flex-wrap items-center justify-between gap-3 rounded-lg border px-4 py-3 hover:bg-[var(--color-page)] ${incomingNew > 0 ? "border-[var(--color-brand)] bg-[var(--color-brand-soft)]" : "border-[var(--color-border)] bg-[var(--color-surface)]"}`}
+      >
+        <div>
+          <p className="text-sm font-semibold text-[var(--color-text)]">CareNexa Connect referrals</p>
+          <p className="text-sm text-[var(--color-text-muted)]">
+            {incomingNew > 0 ? `${incomingNew} new referral${incomingNew === 1 ? "" : "s"} waiting for this hospital · ` : ""}
+            {incomingOpen} incoming in progress · {outgoingOpen} outgoing in progress
+          </p>
+        </div>
+        <span className="text-sm font-medium text-[var(--color-brand)]">Open referrals →</span>
+      </Link>
+
+      <Panel>
+        <PanelHeader title="CareNexa Connect pilot metrics" description="Calculated from persisted referral events." />
+        <div className="grid grid-cols-2 gap-4 p-4 sm:grid-cols-5">
+          <div><p className="text-xs text-[var(--color-text-muted)]">Avg. acknowledgment</p><p className="mt-1 text-lg font-semibold">{pilotMetrics.averageAcknowledgmentMinutes === null ? "—" : `${pilotMetrics.averageAcknowledgmentMinutes} min`}</p></div>
+          <div><p className="text-xs text-[var(--color-text-muted)]">Completion</p><p className="mt-1 text-lg font-semibold">{pilotMetrics.completionRate === null ? "—" : `${pilotMetrics.completionRate}%`}</p></div>
+          <div><p className="text-xs text-[var(--color-text-muted)]">Missing information</p><p className="mt-1 text-lg font-semibold">{pilotMetrics.missingInformationRate === null ? "—" : `${pilotMetrics.missingInformationRate}%`}</p></div>
+          <div><p className="text-xs text-[var(--color-text-muted)]">Arrival confirmed</p><p className="mt-1 text-lg font-semibold">{pilotMetrics.arrivalConfirmationRate === null ? "—" : `${pilotMetrics.arrivalConfirmationRate}%`}</p></div>
+          <div><p className="text-xs text-[var(--color-text-muted)]">Summary returned</p><p className="mt-1 text-lg font-semibold">{pilotMetrics.dischargeSummaryReturnRate === null ? "—" : `${pilotMetrics.dischargeSummaryReturnRate}%`}</p></div>
+        </div>
+      </Panel>
 
       <div>
         <h2 className="mb-3 text-sm font-semibold text-[var(--color-text)]">Enter a department</h2>

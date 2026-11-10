@@ -5,6 +5,7 @@ import { Badge } from "@/components/ui/Badge";
 import type { Tone } from "@/components/ui/Badge";
 import { setAppointmentStatusAction } from "@/app/(dashboard)/patients/[id]/actions";
 import { NewAppointmentForm } from "./NewAppointmentForm";
+import { requireSession } from "@/lib/auth";
 import { SubmitWithToast } from "@/components/ui/SubmitWithToast";
 
 const statusTone: Record<string, Tone> = {
@@ -15,8 +16,9 @@ const statusTone: Record<string, Tone> = {
 };
 
 export default async function AppointmentsPage() {
+  const session = await requireSession();
   const appointments = await db.appointment.findMany({
-    where: { status: "SCHEDULED" },
+    where: { hospitalId: session.hospitalId, status: "SCHEDULED" },
     include: { patient: true, department: true },
     orderBy: { scheduledFor: "asc" },
   });

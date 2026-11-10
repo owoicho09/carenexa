@@ -1,0 +1,378 @@
+# CareNexa
+## Multi-Hospital Network MVP — Architecture & Implementation Blueprint
+
+**Version:** 1.0  
+**Date:** 9 November 2026  
+**Purpose:** Extend the existing CareNexa hospital management system into a functional two-hospital network MVP for investor demonstration.
+
+---
+
+## 1. Product Objective
+
+Extend the existing single-hospital application into a connected healthcare network.
+
+The MVP will demonstrate:
+
+- Two independent hospitals operating on one CareNexa deployment.
+- One permanent universal CareNexa identity per patient.
+- Patient-controlled sharing of medical records between hospitals.
+- A complete inter-hospital referral and care coordination workflow.
+- AI-assisted clinical intelligence powered by OpenAI.
+- Secure hospital-level access controls and auditable actions.
+
+This is an extension of the existing application, not a rewrite.
+
+## 2. Demonstration Environment
+
+Use one application deployment and one shared database.
+
+Create two demonstration hospitals:
+
+- **Hospital A:** General Hospital
+- **Hospital B:** Specialist Hospital
+
+Each hospital has independent:
+- Staff accounts and roles.
+- Departments.
+- Patient records.
+- Appointments and clinical workflows.
+- Hospital administration.
+- Referral inbox and outgoing referrals.
+
+A platform administrator can switch between hospital workspaces. Ordinary hospital staff cannot switch into another hospital's workspace unless explicitly authorized.
+
+Use synthetic patient data for demonstrations.
+
+## 3. Core Architecture
+
+### 3.1 Hospital tenancy
+
+Introduce a `Hospital` model.
+
+Every hospital-owned record must be scoped to its hospital, either directly or through a verified parent relationship.
+
+Add hospital ownership to relevant existing models, including:
+
+- Department
+- StaffMember or hospital membership
+- Patient
+- CardType
+- Vacancy and recruitment records, if retained in the hospital product
+
+Operational records must inherit and enforce the hospital scope of their parent records.
+
+Implement centralized authorization and tenant-scoped database access. Do not rely on frontend visibility or route restrictions for data security.
+
+### 3.2 Universal patient identity
+
+Separate the patient's network identity from their hospital-local medical record.
+
+Proposed models:
+
+**CareNexaIdentity**
+- id
+- universalPatientNumber
+- identity verification metadata
+- createdAt
+
+**Patient**
+- Existing hospital-local patient record.
+- Add hospitalId.
+- Link to CareNexaIdentity.
+
+**PatientHospitalLink**
+- identityId
+- hospitalId
+- patientId
+- linkedAt
+- verificationStatus
+
+A patient visiting multiple hospitals retains one universal identity while each hospital maintains its own local clinical record.
+
+Do not merge hospital records into one globally accessible patient record.
+
+Preserve existing hospital numbers during migration.
+
+### 3.3 Patient-controlled record sharing
+
+Introduce an authorization model, provisionally `PatientAccessGrant`.
+
+It should capture:
+
+- Patient identity.
+- Source hospital.
+- Receiving hospital.
+- Requesting user or referral.
+- Purpose of access.
+- Authorized record categories.
+- Authorization timestamp.
+- Expiry and revocation.
+- Patient authorization evidence.
+- Identity verification evidence.
+
+The receiving hospital must not gain access simply because it knows the patient's CareNexa number or has received a referral.
+
+Separate two checks:
+
+1. **Identity verification:** Has the patient's identity been physically verified by the receiving hospital?
+2. **Authorization:** Has the patient authorized the requested records to be shared?
+
+Both must be enforced before protected record content is disclosed.
+
+Emergency access must be separately governed, explicitly recorded and auditable. It must not silently bypass patient control.
+
+### 3.4 Inter-hospital referrals
+
+Create a dedicated `Referral` model. Do not reuse the existing interdepartmental `Request` model.
+
+A referral should include:
+
+- Patient identity.
+- Referring hospital and clinician.
+- Receiving hospital and department.
+- Clinical reason and urgency.
+- Relevant clinical information.
+- Requested service.
+- Supporting documents and investigation results.
+- Patient authorization reference.
+- Referral status.
+- Created and updated timestamps.
+
+The referral must link to the patient's longitudinal record and preserve the source of shared clinical information.
+
+### 3.5 Referral lifecycle
+
+Implement distinct events rather than treating referral acceptance as completed care.
+
+Suggested lifecycle:
+
+1. Draft
+2. Submitted
+3. Acknowledged
+4. Under review
+5. More information requested
+6. Accepted
+7. Declined
+8. Redirected
+9. Appointment scheduled
+10. Patient arrival confirmed
+11. Treatment in progress
+12. Discharged
+13. Counter-referral submitted
+14. Completed
+
+Not every referral will pass through every state.
+
+Record each transition with the actor, timestamp and relevant details.
+
+Emergency stabilization and transfer must not be delayed by routine administrative workflows.
+
+### 3.6 Return of care information
+
+After treatment, the receiving hospital should be able to create a discharge or counter-referral summary.
+
+The summary should be returned to the referring hospital through the appropriate patient-authorized sharing process.
+
+The referring hospital should be able to review and incorporate the summary into its local patient record.
+
+## 4. AI Clinical Intelligence
+
+Use OpenAI for the new clinical intelligence features.
+
+Retain the existing Anthropic integration initially. Introduce a provider abstraction so existing AI functionality does not need to be rewritten.
+
+### Initial AI capabilities
+
+**A. Patient risk assessment**
+- Analyze available vitals, diagnoses, laboratory results and clinical history.
+- Highlight potential concerns for clinician review.
+- Show the evidence behind each observation.
+
+**B. Clinical pattern detection**
+- Identify relevant patterns across multiple encounters.
+- Use records from other hospitals only when the necessary authorization is present.
+- Show the records and dates supporting each finding.
+
+**C. Clinical insights**
+- Highlight abnormal results, relevant history and potential follow-up considerations.
+- Distinguish model-generated observations from deterministic clinical rules.
+
+**D. Longitudinal medical record summaries**
+- Summarize relevant patient history.
+- Include authorized records from other hospitals.
+- Identify missing or unavailable information.
+
+### AI implementation requirements
+
+- Use actual patient-record data, not hardcoded demonstration responses.
+- Retrieve patient context server-side.
+- Enforce hospital permissions and patient authorization before retrieval.
+- Use structured, schema-validated outputs.
+- Store model/provider, prompt version, generation time and source record references.
+- Include supporting evidence and source timestamps.
+- Clearly label AI output as an assistive suggestion.
+- Require clinician review before clinical actions.
+- Never automatically create diagnoses, prescriptions or signed clinical notes from AI suggestions.
+
+Clinical risk thresholds and alert rules require appropriate clinical review. Do not claim clinical validation or diagnostic accuracy without evidence.
+
+## 5. Existing Application Integration
+
+Preserve the current application and reuse its working components.
+
+Existing functionality identified in the codebase:
+
+- Staff authentication and roles.
+- Department workspaces.
+- Patient registration and records.
+- Visits, vitals, notes and diagnoses.
+- Laboratory results and prescriptions.
+- Internal department requests.
+- Notifications and audit logging.
+- AI document generation and approval.
+- Existing Anthropic provider and patient-summary logic.
+
+Extend these components with hospital-level ownership and access controls.
+
+Do not unnecessarily rebuild existing workflows.
+
+## 6. Security and Authorization
+
+This is a foundational requirement, not a later enhancement.
+
+Implement:
+
+- Hospital-scoped data access.
+- Centralized authorization checks.
+- Separate platform and hospital administration.
+- Patient-level authorization for cross-hospital records.
+- Receiving-hospital identity verification.
+- Audit logs for record access, sharing, consent and referral transitions.
+- Expiring and revocable access grants.
+- Server-side validation for all mutations and API routes.
+
+Review existing ID-only queries and mutations. An authenticated user must not be able to access another hospital's records simply by supplying a record ID.
+
+Specific existing areas requiring review include:
+- Patient actions and patient search.
+- Notification ownership checks.
+- AI artifact approval.
+- Request handling.
+- Agent tools and confirmation endpoints.
+- AI context retrieval.
+- Recruitment access and ownership.
+
+## 7. UI/UX Requirements
+
+Retain and improve the existing interface rather than replacing it without reason.
+
+Required experiences:
+
+- Hospital-specific dashboard.
+- Hospital switcher for authorized platform administrators.
+- Universal patient identity visible in patient records.
+- Clear distinction between local and externally shared records.
+- Patient authorization workflow.
+- Incoming and outgoing referral workspaces.
+- Referral status timeline.
+- Patient arrival confirmation.
+- Discharge and counter-referral workflow.
+- AI insights panel with supporting evidence and review controls.
+
+The interface should make it obvious which hospital a user is operating in and which records are being shared.
+
+## 8. Proposed Implementation Sequence
+
+### Phase 1 — Multi-hospital foundation
+- Add Hospital model.
+- Create Hospital A and Hospital B.
+- Backfill existing records into Hospital A.
+- Introduce hospital-aware staff access.
+- Scope all relevant queries and mutations.
+- Update uniqueness constraints and patient-number generation.
+- Add cross-hospital access-denial tests.
+
+### Phase 2 — Universal patient identity
+- Add CareNexaIdentity.
+- Add PatientHospitalLink.
+- Preserve existing local patient records.
+- Link the same synthetic patient across both hospitals.
+- Implement identity lookup and verification.
+
+### Phase 3 — Patient-controlled interoperability
+- Add patient access requests and grants.
+- Implement authorization and revocation.
+- Enforce physical identity verification at the receiving hospital.
+- Build the secure record-sharing interface.
+- Add audit logging.
+
+### Phase 4 — CareNexa Connect
+- Add Referral model and lifecycle.
+- Build outgoing and incoming referral workspaces.
+- Implement receiving-hospital review.
+- Add arrival confirmation and treatment updates.
+- Implement discharge and counter-referral.
+- Track pilot performance indicators.
+
+### Phase 5 — OpenAI clinical intelligence
+- Add OpenAI provider adapter.
+- Build scoped patient-context retrieval.
+- Implement risk observations, pattern detection, clinical insights and summaries.
+- Store evidence and provenance.
+- Add clinician review controls.
+
+### Phase 6 — Demonstration readiness
+- Refine existing UI.
+- Seed realistic synthetic data.
+- Configure separate hospital staff accounts.
+- Demonstrate the full two-hospital workflow.
+- Test permissions and failure cases.
+- Prepare measurable pilot indicators.
+
+## 9. Pilot Metrics
+
+The demonstration should capture:
+
+- Referral acknowledgment time.
+- Referral completion rate.
+- Missing clinical information rate.
+- Patient arrival confirmation rate.
+- Discharge-summary return rate.
+
+These should be calculated from persisted referral events, not manually entered dashboard figures.
+
+## 10. Required Testing
+
+At minimum:
+
+- Hospital A staff cannot access Hospital B's patient records.
+- Hospital B staff cannot access Hospital A's patient records.
+- Knowing a universal patient number does not grant record access.
+- A referral does not automatically grant access to the full patient history.
+- Unapproved access grants are rejected.
+- Revoked or expired grants no longer authorize access.
+- Identity verification and consent are checked separately.
+- Referral transitions are recorded correctly.
+- Discharge summaries return to the correct referring hospital.
+- AI cannot retrieve unauthorized records.
+- AI output cannot silently become a confirmed clinical action.
+- Existing single-hospital workflows continue working.
+
+## 11. Important Decisions and Assumptions
+
+For this MVP:
+
+- One shared CareNexa deployment and database.
+- Two demonstration hospitals.
+- One universal patient identity linked to separate hospital-local records.
+- Patient authorization is required for ordinary cross-hospital record sharing.
+- Physical identity verification is recorded at the receiving hospital.
+- Existing Anthropic functionality remains while OpenAI is introduced for new clinical intelligence.
+- Synthetic records are used for demonstrations.
+- FHIR compatibility is a future interoperability consideration, not a claim that external hospital systems are already connected.
+
+Before production deployment, CareNexa will need appropriate clinical governance, legal review, data-sharing agreements, privacy controls and security assessment.
+
+---
+
+**Implementation principle:** Understand the existing code, make the smallest safe architectural changes, preserve working functionality, and build and test one phase at a time.

@@ -5,6 +5,7 @@ import { ROLE_LABEL } from "@/lib/nav";
 import { setRolePermissionAction } from "./actions";
 import { SubmitWithToast } from "@/components/ui/SubmitWithToast";
 import type { StaffRole } from "@/generated/prisma/enums";
+import { requireSession } from "@/lib/auth";
 
 const ASSIGNABLE_ROLES: StaffRole[] = [
   "RECORDS_OFFICER",
@@ -17,7 +18,8 @@ const ASSIGNABLE_ROLES: StaffRole[] = [
 ];
 
 export default async function PermissionsPage() {
-  const rows = await db.rolePermission.findMany();
+  const session = await requireSession(["ADMIN"]);
+  const rows = await db.rolePermission.findMany({ where: { hospitalId: session.hospitalId } });
   const enabled = new Set(rows.filter((r) => r.enabled).map((r) => `${r.role}:${r.permission}`));
 
   return (

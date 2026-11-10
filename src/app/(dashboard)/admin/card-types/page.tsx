@@ -2,9 +2,12 @@ import Link from "next/link";
 import { db } from "@/lib/db";
 import { PageHeader, Panel, PanelHeader } from "@/components/ui/Panel";
 import { NewCardTypeForm } from "./NewCardTypeForm";
+import { requireSession } from "@/lib/auth";
 
 export default async function CardTypesPage() {
+  const session = await requireSession(["ADMIN"]);
   const cardTypes = await db.cardType.findMany({
+    where: { hospitalId: session.hospitalId },
     orderBy: { name: "asc" },
     include: { _count: { select: { patients: true } } },
   });

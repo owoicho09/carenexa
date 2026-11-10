@@ -1,9 +1,11 @@
 import { db } from "@/lib/db";
 import { PageHeader, Panel } from "@/components/ui/Panel";
 import { NewStaffForm } from "./NewStaffForm";
+import { requireSession } from "@/lib/auth";
 
 export default async function NewStaffPage() {
-  const departments = await db.department.findMany({ orderBy: { name: "asc" } });
+  const session = await requireSession(["ADMIN"]);
+  const departments = await db.department.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } });
 
   return (
     <div className="max-w-2xl space-y-6">

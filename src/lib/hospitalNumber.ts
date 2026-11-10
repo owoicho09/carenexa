@@ -3,8 +3,8 @@ import { db } from "@/lib/db";
 // Issues the next sequential hospital number for a card type's series in the
 // current year, e.g. GOP/2026/00412. Uses an atomic upsert+increment so
 // concurrent registrations under the same card type never collide.
-export async function issueHospitalNumber(cardTypeId: string): Promise<string> {
-  const cardType = await db.cardType.findUniqueOrThrow({ where: { id: cardTypeId } });
+export async function issueHospitalNumber(cardTypeId: string, hospitalId: string): Promise<string> {
+  const cardType = await db.cardType.findFirstOrThrow({ where: { id: cardTypeId, hospitalId } });
   const year = new Date().getFullYear();
 
   const counter = await db.$transaction(async (tx) => {

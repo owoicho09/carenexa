@@ -5,10 +5,10 @@ import { ToastButton } from "@/components/ui/SubmitWithToast";
 import { restorePatientAction } from "./actions";
 
 export default async function DeletedPatientsPage() {
-  await requireSession(["ADMIN"]);
+  const session = await requireSession(["ADMIN"]);
 
   const patients = await db.patient.findMany({
-    where: { isDeleted: true },
+    where: { hospitalId: session.hospitalId, isDeleted: true },
     include: { cardType: true },
     orderBy: { deletedAt: "desc" },
   });

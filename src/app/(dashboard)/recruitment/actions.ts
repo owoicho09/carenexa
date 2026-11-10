@@ -9,7 +9,7 @@ import { readCvFile } from "@/lib/cvUpload";
 type ActionState = { error?: string } | undefined;
 
 export async function createVacancyAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
 
   const title = String(formData.get("title") ?? "").trim();
   const departmentId = String(formData.get("departmentId") ?? "") || null;
@@ -21,34 +21,37 @@ export async function createVacancyAction(_prev: ActionState, formData: FormData
   if (!title || !description || !requirementsRaw || !location) {
     return { error: "Fill in title, description, requirements, and location." };
   }
+  if (departmentId && !(await db.department.findFirst({ where: { id: departmentId, hospitalId: session.hospitalId } }))) {
+    return { error: "Choose a department in this hospital." };
+  }
 
   const requirements = requirementsRaw.split("\n").map((r) => r.trim()).filter(Boolean);
 
   const vacancy = await db.vacancy.create({
-    data: { title, departmentId, description, requirements, employmentType, location },
+    data: { hospitalId: session.hospitalId, title, departmentId, description, requirements, employmentType, location },
   });
 
   redirect(`/recruitment/vacancies/${vacancy.id}`);
 }
 
 export async function publishVacancyAction(formData: FormData) {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
   const vacancyId = String(formData.get("vacancyId") ?? "");
-  await db.vacancy.update({ where: { id: vacancyId }, data: { status: "PUBLISHED", publishedAt: new Date() } });
+  await db.vacancy.updateMany({ where: { id: vacancyId, hospitalId: session.hospitalId }, data: { status: "PUBLISHED", publishedAt: new Date() } });
   revalidatePath(`/recruitment/vacancies/${vacancyId}`);
   revalidatePath("/careers");
 }
 
 export async function closeVacancyAction(formData: FormData) {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
   const vacancyId = String(formData.get("vacancyId") ?? "");
-  await db.vacancy.update({ where: { id: vacancyId }, data: { status: "CLOSED", closedAt: new Date() } });
+  await db.vacancy.updateMany({ where: { id: vacancyId, hospitalId: session.hospitalId }, data: { status: "CLOSED", closedAt: new Date() } });
   revalidatePath(`/recruitment/vacancies/${vacancyId}`);
   revalidatePath("/careers");
 }
 
 export async function addApplicationAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  await requireSession(["ADMIN", "RECRUITER"]);
+  const session = await requireSession(["ADMIN", "RECRUITER"]);
 
   const vacancyId = String(formData.get("vacancyId") ?? "");
   const fullName = String(formData.get("fullName") ?? "").trim();
@@ -63,9 +66,13 @@ export async function addApplicationAction(_prev: ActionState, formData: FormDat
   const { file, error } = await readCvFile(formData);
   if (error) return { error };
 
-  const candidate = await db.candidate.create({ data: { fullName, email, phone } });
+  const vacancy = await db.vacancy.findFirst({ where: { id: vacancyId, hospitalId: session.hospitalId } });
+  if (!vacancy) return { error: "Vacancy not found in this hospital." };
+
+  const candidate = await db.candidate.create({ data: { hospitalId: session.hospitalId, fullName, email, phone } });
   await db.application.create({
     data: {
+      hospitalId: session.hospitalId,
       vacancyId,
       candidateId: candidate.id,
       cvFileName: file!.name,

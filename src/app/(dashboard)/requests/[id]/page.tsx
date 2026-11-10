@@ -12,6 +12,7 @@ import { PharmacyHandler } from "./handlers/PharmacyHandler";
 import { GenericOutcomeHandler } from "./handlers/GenericOutcomeHandler";
 import { CompleteRequestForm, QueryRequestForm } from "@/components/queue/RequestActions";
 import { PrintResultButton } from "@/components/queue/PrintResultButton";
+import { requireSession } from "@/lib/auth";
 
 const urgencyTone: Record<string, Tone> = { ROUTINE: "neutral", URGENT: "warning", EMERGENCY: "danger" };
 const statusTone: Record<string, Tone> = { PENDING: "warning", IN_PROGRESS: "brand", COMPLETED: "success", QUERIED: "danger" };
@@ -27,9 +28,10 @@ function formatAge(dateOfBirth: Date) {
 
 export default async function RequestPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
+  const session = await requireSession();
 
-  const request = await db.request.findUnique({
-    where: { id },
+  const request = await db.request.findFirst({
+    where: { id, hospitalId: session.hospitalId },
     include: {
       visit: { include: { patient: true } },
       fromDepartment: true,
@@ -47,7 +49,7 @@ export default async function RequestPage({ params }: { params: Promise<{ id: st
 
   const pendingPrescriptions =
     request.toDepartment.slug === "pharmacy"
-      ? await db.prescription.findMany({ where: { visitId: request.visitId, status: "PENDING" } })
+      ? await db.prescription.findMany({ where: { visitId: request.visitId, status: "PENDING", visit: { hospitalId: session.hospitalId } } })
       : [];
 
   const resultFields =

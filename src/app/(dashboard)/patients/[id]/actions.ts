@@ -27,10 +27,13 @@ export async function sendToDepartmentAction(
     return { error: "Choose a department, request type, and reason before sending." };
   }
 
-  const visit = await db.visit.findUnique({ where: { id: visitId } });
+  const visit = await db.visit.findFirst({ where: { id: visitId, hospitalId: session.hospitalId } });
   if (!visit || visit.status !== "OPEN") {
     return { error: "This visit is closed and can no longer receive requests." };
   }
+
+  const toDepartment = await db.department.findFirst({ where: { id: toDepartmentId, hospitalId: session.hospitalId } });
+  if (!toDepartment) return { error: "Choose a department in this hospital." };
 
   const fromDepartmentId = session.departmentId;
   if (!fromDepartmentId) {
@@ -38,6 +41,7 @@ export async function sendToDepartmentAction(
   }
 
   await createRequest({
+    hospitalId: session.hospitalId,
     visitId,
     fromDepartmentId,
     toDepartmentId,
@@ -57,13 +61,13 @@ export async function closeVisitAction(
   _prevState: CloseVisitState,
   formData: FormData
 ): Promise<CloseVisitState> {
-  await requireSession();
+  const session = await requireSession();
 
   const visitId = String(formData.get("visitId") ?? "");
   const followUpDate = String(formData.get("followUpDate") ?? "");
   const followUpNote = String(formData.get("followUpNote") ?? "").trim();
 
-  const visit = await db.visit.findUnique({ where: { id: visitId } });
+  const visit = await db.visit.findFirst({ where: { id: visitId, hospitalId: session.hospitalId } });
   if (!visit || visit.status !== "OPEN") {
     return { error: "This visit is already closed." };
   }
@@ -85,7 +89,7 @@ export async function closeVisitAction(
 export type UpdatePatientState = { error?: string } | undefined;
 
 export async function updatePatientAction(_prev: UpdatePatientState, formData: FormData): Promise<UpdatePatientState> {
-  await requireSession();
+  const session = await requireSession();
 
   const patientId = String(formData.get("patientId") ?? "");
   const fullName = String(formData.get("fullName") ?? "").trim();
@@ -106,8 +110,8 @@ export async function updatePatientAction(_prev: UpdatePatientState, formData: F
 
   const allergies = allergiesRaw ? allergiesRaw.split(",").map((a) => a.trim()).filter(Boolean) : [];
 
-  await db.patient.update({
-    where: { id: patientId },
+  const updated = await db.patient.updateMany({
+    where: { id: patientId, hospitalId: session.hospitalId },
     data: {
       fullName,
       dateOfBirth: new Date(dateOfBirth),
@@ -122,6 +126,7 @@ export async function updatePatientAction(_prev: UpdatePatientState, formData: F
       nextOfKinRelation,
     },
   });
+  if (!updated.count) return { error: "Patient not found in this hospital." };
 
   redirect(`/patients/${patientId}`);
 }
@@ -132,12 +137,15 @@ export async function deletePatientAction(_prev: DeletePatientState, formData: F
   const session = await requireSession();
   const patientId = String(formData.get("patientId") ?? "");
 
-  const allowed = await hasPermission(session.role, "CAN_DELETE_PATIENT");
+  const allowed = await hasPermission(session.role, "CAN_DELETE_PATIENT", session.hospitalId);
   if (!allowed) return { error: "Your role doesn't have permission to delete patients." };
 
-  const patient = await db.patient.update({ where: { id: patientId }, data: { isDeleted: true, deletedAt: new Date() } });
+  const patient = await db.patient.findFirst({ where: { id: patientId, hospitalId: session.hospitalId } });
+  if (!patient) return { error: "Patient not found in this hospital." };
+  await db.patient.update({ where: { id: patient.id }, data: { isDeleted: true, deletedAt: new Date() } });
 
   await logAudit({
+    hospitalId: session.hospitalId,
     actorId: session.staffId,
     action: "PATIENT_DELETED",
     targetType: "Patient",
@@ -150,18 +158,54 @@ export async function deletePatientAction(_prev: DeletePatientState, formData: F
 
 export type OpenVisitState = { error?: string } | undefined;
 
+export type IdentityVerificationState = { error?: string } | undefined;
+
+export async function verifyPatientIdentityAction(_prev: IdentityVerificationState, formData: FormData): Promise<IdentityVerificationState> {
+  const session = await requireSession(["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST"]);
+  const patientId = String(formData.get("patientId") ?? "");
+  const evidenceReference = String(formData.get("evidenceReference") ?? "").trim();
+  if (!evidenceReference) return { error: "Enter the in-person verification evidence reference." };
+
+  const link = await db.patientHospitalLink.findFirst({ where: { patientId, hospitalId: session.hospitalId } });
+  if (!link) return { error: "Patient identity link not found in this hospital." };
+
+  await db.$transaction(async (tx) => {
+    await tx.patientHospitalLink.update({ where: { id: link.id }, data: { verificationStatus: "VERIFIED" } });
+    await tx.patientIdentityVerification.create({
+      data: {
+        identityId: link.identityId,
+        hospitalId: session.hospitalId,
+        patientId,
+        verifiedById: session.staffId,
+        status: "VERIFIED",
+        method: "IN_PERSON",
+        evidenceReference,
+      },
+    });
+    await tx.careNexaIdentity.update({ where: { id: link.identityId }, data: { verificationStatus: "VERIFIED", verificationMethod: "IN_PERSON", verifiedAt: new Date() } });
+  });
+
+  await logAudit({ hospitalId: session.hospitalId, actorId: session.staffId, action: "PATIENT_IDENTITY_VERIFIED", targetType: "Patient", targetId: patientId, detail: evidenceReference });
+  revalidatePath(`/patients/${patientId}`);
+  revalidatePath("/referrals/[id]", "page");
+  return undefined;
+}
+
 export async function openVisitAction(_prev: OpenVisitState, formData: FormData): Promise<OpenVisitState> {
   const session = await requireSession();
   const patientId = String(formData.get("patientId") ?? "");
   const presentingComplaint = String(formData.get("presentingComplaint") ?? "").trim();
 
-  const existingOpen = await db.visit.findFirst({ where: { patientId, status: "OPEN" } });
+  const patient = await db.patient.findFirst({ where: { id: patientId, hospitalId: session.hospitalId, isDeleted: false } });
+  if (!patient) return { error: "Patient not found in this hospital." };
+
+  const existingOpen = await db.visit.findFirst({ where: { hospitalId: session.hospitalId, patientId, status: "OPEN" } });
   if (existingOpen) {
     return { error: "This patient already has an open visit." };
   }
 
   await db.visit.create({
-    data: { patientId, openedById: session.staffId, presentingComplaint: presentingComplaint || null },
+    data: { hospitalId: session.hospitalId, patientId, openedById: session.staffId, presentingComplaint: presentingComplaint || null },
   });
 
   redirect(`/patients/${patientId}`);
@@ -181,6 +225,7 @@ export async function bookAppointmentAction(_prev: BookAppointmentState, formDat
 
   await db.appointment.create({
     data: {
+      hospitalId: session.hospitalId,
       patientId,
       departmentId: session.departmentId,
       scheduledFor: new Date(scheduledFor),
@@ -195,10 +240,12 @@ export async function bookAppointmentAction(_prev: BookAppointmentState, formDat
 }
 
 export async function setAppointmentStatusAction(formData: FormData) {
-  await requireSession();
+  const session = await requireSession();
   const appointmentId = String(formData.get("appointmentId") ?? "");
   const status = String(formData.get("status") ?? "") as "COMPLETED" | "CANCELLED" | "NO_SHOW";
-  const appointment = await db.appointment.update({ where: { id: appointmentId }, data: { status } });
+  const appointment = await db.appointment.findFirst({ where: { id: appointmentId, hospitalId: session.hospitalId } });
+  if (!appointment) return;
+  await db.appointment.update({ where: { id: appointment.id }, data: { status } });
   revalidatePath(`/patients/${appointment.patientId}`);
   revalidatePath("/records/appointments");
 }
@@ -218,6 +265,7 @@ export async function sendCommunicationAction(_prev: SendCommunicationState, for
 
   const communication = await db.communication.create({
     data: {
+      hospitalId: session.hospitalId,
       patientId,
       channel,
       subject: channel === "EMAIL" ? subject : null,
@@ -232,8 +280,11 @@ export async function sendCommunicationAction(_prev: SendCommunicationState, for
 }
 
 export async function confirmDeliveryAction(communicationId: string) {
-  const communication = await db.communication.update({
-    where: { id: communicationId },
+  const session = await requireSession();
+  const communication = await db.communication.findFirst({ where: { id: communicationId, hospitalId: session.hospitalId } });
+  if (!communication) return;
+  await db.communication.update({
+    where: { id: communication.id },
     data: { status: "DELIVERED", deliveredAt: new Date() },
   });
   revalidatePath(`/patients/${communication.patientId}`);

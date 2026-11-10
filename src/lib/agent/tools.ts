@@ -1,4 +1,5 @@
 import "server-only";
+import { randomUUID } from "node:crypto";
 import { db } from "@/lib/db";
 import { createRequest } from "@/lib/requests";
 import { issueHospitalNumber } from "@/lib/hospitalNumber";
@@ -26,7 +27,7 @@ type ToolSpec = {
   allowedRoles: StaffRole[] | "all";
   mutating: boolean;
   // For mutating tools: a read-only human-readable preview of what will happen, shown before execution.
-  describe?: (input: Record<string, unknown>) => Promise<string>;
+  describe?: (session: SessionPayload, input: Record<string, unknown>) => Promise<string>;
   run: (session: SessionPayload, input: Record<string, unknown>) => Promise<ToolExecutionResult>;
 };
 
@@ -39,8 +40,8 @@ function num(input: Record<string, unknown>, key: string): number | undefined {
   return typeof v === "number" ? v : undefined;
 }
 
-async function findOpenVisit(patientId: string) {
-  return db.visit.findFirst({ where: { patientId, status: "OPEN" }, include: { patient: true } });
+async function findOpenVisit(patientId: string, hospitalId: string) {
+  return db.visit.findFirst({ where: { patientId, hospitalId, status: "OPEN" }, include: { patient: true } });
 }
 
 const ALL_CLINICAL_ROLES: StaffRole[] = ["ADMIN", "NURSE", "CLINICIAN", "LAB_SCIENTIST", "PHARMACIST", "RECORDS_OFFICER", "RECEPTIONIST"];
@@ -51,7 +52,7 @@ export const TOOLS: ToolSpec[] = [
   // -------------------------------------------------------------------------
   {
     mutating: false,
-    allowedRoles: "all",
+    allowedRoles: ALL_CLINICAL_ROLES,
     definition: {
       name: "find_patient",
       description: "Search for a patient by name, phone, or hospital number. Returns matches with their id.",
@@ -61,11 +62,12 @@ export const TOOLS: ToolSpec[] = [
         required: ["query"],
       },
     },
-    run: async (_session, input) => {
+    run: async (session, input) => {
       const query = str(input, "query").trim();
       if (!query) return { ok: false, error: "No search query given." };
       const patients = await db.patient.findMany({
         where: {
+          hospitalId: session.hospitalId,
           isDeleted: false,
           OR: [
             { fullName: { contains: query, mode: "insensitive" } },
@@ -94,7 +96,7 @@ export const TOOLS: ToolSpec[] = [
     },
     run: async (session) => {
       if (!session.departmentSlug) return { ok: true, message: "You have no department assigned, so there's no queue to check." };
-      const requests = await getPendingRequestsForDepartmentSlug(session.departmentSlug);
+      const requests = await getPendingRequestsForDepartmentSlug(session.departmentSlug, session.hospitalId);
       if (requests.length === 0) return { ok: true, message: "Nothing is waiting on your department right now." };
       return {
         ok: true,
@@ -107,7 +109,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     mutating: false,
-    allowedRoles: "all",
+    allowedRoles: ALL_CLINICAL_ROLES,
     definition: {
       name: "get_patient_summary",
       description: "Get an AI-generated summary of a patient's history — conditions, medications, trends, allergies. Use the patient id from find_patient.",
@@ -117,9 +119,9 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId"],
       },
     },
-    run: async (_session, input) => {
+    run: async (session, input) => {
       const patientId = str(input, "patientId");
-      const result = await generateHistorySummary(patientId);
+      const result = await generateHistorySummary(patientId, session.hospitalId, session.staffId);
       if (!result.text) return { ok: false, error: result.reason ?? "Could not generate a summary." };
       return { ok: true, message: result.text };
     },
@@ -151,15 +153,16 @@ export const TOOLS: ToolSpec[] = [
         required: ["fullName", "dateOfBirth", "sex", "phone", "address", "cardTypeSeriesCode", "nextOfKinName", "nextOfKinPhone", "nextOfKinRelation"],
       },
     },
-    describe: async (input) =>
+    describe: async (_session, input) =>
       `Register ${str(input, "fullName")} (${str(input, "sex")}, DOB ${str(input, "dateOfBirth")}) under a ${str(input, "cardTypeSeriesCode")} card, and open today's visit${str(input, "presentingComplaint") ? ` for "${str(input, "presentingComplaint")}"` : ""}.`,
     run: async (session, input) => {
-      const cardType = await db.cardType.findUnique({ where: { seriesCode: str(input, "cardTypeSeriesCode").toUpperCase() } });
+      const cardType = await db.cardType.findFirst({ where: { hospitalId: session.hospitalId, seriesCode: str(input, "cardTypeSeriesCode").toUpperCase() } });
       if (!cardType) return { ok: false, error: `No card type with series code "${str(input, "cardTypeSeriesCode")}".` };
 
-      const hospitalNumber = await issueHospitalNumber(cardType.id);
+      const hospitalNumber = await issueHospitalNumber(cardType.id, session.hospitalId);
       const patient = await db.patient.create({
         data: {
+          hospitalId: session.hospitalId,
           fullName: str(input, "fullName"),
           dateOfBirth: new Date(str(input, "dateOfBirth")),
           sex: str(input, "sex") as "MALE" | "FEMALE",
@@ -170,7 +173,33 @@ export const TOOLS: ToolSpec[] = [
           nextOfKinRelation: str(input, "nextOfKinRelation"),
           cardTypeId: cardType.id,
           hospitalNumber,
-          visits: { create: { openedById: session.staffId, presentingComplaint: str(input, "presentingComplaint") || null } },
+          identityLinks: {
+            create: {
+              hospital: { connect: { id: session.hospitalId } },
+              verificationStatus: "VERIFIED",
+              identity: {
+                create: {
+                  universalPatientNumber: `CNX-${randomUUID().replace(/-/g, "").slice(0, 20)}`,
+                  verificationStatus: "VERIFIED",
+                  verificationMethod: "IN_PERSON_AGENT_REGISTRATION",
+                  verifiedAt: new Date(),
+                },
+              },
+            },
+          },
+          visits: { create: { hospitalId: session.hospitalId, openedById: session.staffId, presentingComplaint: str(input, "presentingComplaint") || null } },
+        },
+      });
+      const identityLink = await db.patientHospitalLink.findFirstOrThrow({ where: { patientId: patient.id, hospitalId: session.hospitalId } });
+      await db.patientIdentityVerification.create({
+        data: {
+          identityId: identityLink.identityId,
+          hospitalId: session.hospitalId,
+          patientId: patient.id,
+          verifiedById: session.staffId,
+          status: "VERIFIED",
+          method: "IN_PERSON_AGENT_REGISTRATION",
+          evidenceReference: "In-person identity check during staff-assisted registration",
         },
       });
       return { ok: true, message: `Registered ${patient.fullName} as ${hospitalNumber}.`, data: { patientId: patient.id, hospitalNumber } };
@@ -191,16 +220,18 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       return `Open a new visit for ${patient?.fullName ?? "this patient"}${str(input, "presentingComplaint") ? ` — "${str(input, "presentingComplaint")}"` : ""}.`;
     },
     run: async (session, input) => {
       const patientId = str(input, "patientId");
-      const existing = await db.visit.findFirst({ where: { patientId, status: "OPEN" } });
+      const existing = await db.visit.findFirst({ where: { patientId, hospitalId: session.hospitalId, status: "OPEN" } });
       if (existing) return { ok: false, error: "This patient already has an open visit." };
+      const patient = await db.patient.findFirst({ where: { id: patientId, hospitalId: session.hospitalId, isDeleted: false } });
+      if (!patient) return { ok: false, error: "Patient not found in this hospital." };
       await db.visit.create({
-        data: { patientId, openedById: session.staffId, presentingComplaint: str(input, "presentingComplaint") || null },
+        data: { hospitalId: session.hospitalId, patientId, openedById: session.staffId, presentingComplaint: str(input, "presentingComplaint") || null },
       });
       return { ok: true, message: "Visit opened." };
     },
@@ -225,8 +256,8 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       const bits = [
         num(input, "systolicBp") && num(input, "diastolicBp") ? `BP ${num(input, "systolicBp")}/${num(input, "diastolicBp")}` : null,
         num(input, "temperatureC") ? `Temp ${num(input, "temperatureC")}°C` : null,
@@ -236,7 +267,7 @@ export const TOOLS: ToolSpec[] = [
     },
     run: async (session, input) => {
       const patientId = str(input, "patientId");
-      const visit = await findOpenVisit(patientId);
+      const visit = await findOpenVisit(patientId, session.hospitalId);
       if (!visit) return { ok: false, error: "This patient has no open visit." };
       await db.vitalsRecord.create({
         data: {
@@ -255,7 +286,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     mutating: true,
-    allowedRoles: "all",
+    allowedRoles: ALL_CLINICAL_ROLES,
     definition: {
       name: "send_to_department",
       description: "Send a patient's open visit to any department, with a request type, reason, and urgency.",
@@ -271,20 +302,21 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId", "toDepartmentSlug", "requestType", "reason"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
-      const dept = await db.department.findUnique({ where: { slug: str(input, "toDepartmentSlug") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
+      const dept = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId } });
       return `Send ${patient?.fullName ?? "this patient"} to ${dept?.name ?? str(input, "toDepartmentSlug")} for "${str(input, "requestType")}" — ${str(input, "reason")}.`;
     },
     run: async (session, input) => {
       if (!session.departmentId) return { ok: false, error: "Your account has no department, so it can't send requests." };
       const patientId = str(input, "patientId");
-      const visit = await findOpenVisit(patientId);
+      const visit = await findOpenVisit(patientId, session.hospitalId);
       if (!visit) return { ok: false, error: "This patient has no open visit." };
-      const toDepartment = await db.department.findUnique({ where: { slug: str(input, "toDepartmentSlug") } });
+      const toDepartment = await db.department.findFirst({ where: { slug: str(input, "toDepartmentSlug"), hospitalId: session.hospitalId } });
       if (!toDepartment) return { ok: false, error: `No department with slug "${str(input, "toDepartmentSlug")}".` };
 
       await createRequest({
+          hospitalId: session.hospitalId,
         visitId: visit.id,
         fromDepartmentId: session.departmentId,
         toDepartmentId: toDepartment.id,
@@ -312,13 +344,13 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId", "testName", "value"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       return `Record ${str(input, "testName")} = ${str(input, "value")} for ${patient?.fullName ?? "this patient"}.`;
     },
     run: async (session, input) => {
       const patientId = str(input, "patientId");
-      const visit = await findOpenVisit(patientId);
+      const visit = await findOpenVisit(patientId, session.hospitalId);
       if (!visit) return { ok: false, error: "This patient has no open visit." };
       const testName = str(input, "testName");
       const rawValue = str(input, "value");
@@ -375,13 +407,13 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId", "drugName", "quantity"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       return `Dispense ${str(input, "drugName")} (${str(input, "quantity")}) to ${patient?.fullName ?? "this patient"}.`;
     },
     run: async (session, input) => {
       const patientId = str(input, "patientId");
-      const visit = await findOpenVisit(patientId);
+      const visit = await findOpenVisit(patientId, session.hospitalId);
       if (!visit) return { ok: false, error: "This patient has no open visit." };
       const prescription = await db.prescription.findFirst({
         where: { visitId: visit.id, status: "PENDING", drugName: { contains: str(input, "drugName"), mode: "insensitive" } },
@@ -397,7 +429,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     mutating: true,
-    allowedRoles: "all",
+    allowedRoles: ["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST", "NURSE", "CLINICIAN"],
     definition: {
       name: "book_appointment",
       description: "Book a follow-up appointment for a patient.",
@@ -411,8 +443,8 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId", "scheduledFor", "reason"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       return `Book an appointment for ${patient?.fullName ?? "this patient"} on ${str(input, "scheduledFor")} — ${str(input, "reason")}.`;
     },
     run: async (session, input) => {
@@ -427,7 +459,7 @@ export const TOOLS: ToolSpec[] = [
   },
   {
     mutating: true,
-    allowedRoles: "all",
+    allowedRoles: ["ADMIN", "RECORDS_OFFICER", "RECEPTIONIST", "NURSE", "CLINICIAN"],
     definition: {
       name: "send_message",
       description: "Draft and send a WhatsApp or email message to a patient. Write the full message body yourself.",
@@ -442,8 +474,8 @@ export const TOOLS: ToolSpec[] = [
         required: ["patientId", "channel", "body"],
       },
     },
-    describe: async (input) => {
-      const patient = await db.patient.findUnique({ where: { id: str(input, "patientId") } });
+    describe: async (session, input) => {
+      const patient = await db.patient.findFirst({ where: { id: str(input, "patientId"), hospitalId: session.hospitalId } });
       return `Send ${patient?.fullName ?? "this patient"} a ${str(input, "channel") === "EMAIL" ? "email" : "WhatsApp message"}: "${str(input, "body")}"`;
     },
     run: async (_session, input) => {

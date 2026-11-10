@@ -2,6 +2,8 @@ import "dotenv/config";
 import { PrismaClient } from "../src/generated/prisma/client";
 import { PrismaPg } from "@prisma/adapter-pg";
 import bcrypt from "bcryptjs";
+import { randomUUID } from "node:crypto";
+import type { Prisma } from "../src/generated/prisma/client";
 
 const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
 const db = new PrismaClient({ adapter });
@@ -9,7 +11,7 @@ const db = new PrismaClient({ adapter });
 // Every seeded staff account shares this password for demo convenience.
 const DEMO_PASSWORD = "carenexa2026";
 
-async function seedCardTypes() {
+async function seedCardTypes(hospitalId: string) {
   const cardTypes = [
     { name: "General Outpatient", seriesCode: "GOP", description: "Walk-in patients paying out of pocket for general care." },
     { name: "Private", seriesCode: "PVT", description: "Privately insured or self-pay premium patients." },
@@ -20,18 +22,17 @@ async function seedCardTypes() {
 
   const created: Record<string, string> = {};
   for (const ct of cardTypes) {
-    const row = await db.cardType.upsert({
-      where: { seriesCode: ct.seriesCode },
-      update: {},
-      create: ct,
-    });
+    const existing = await db.cardType.findFirst({ where: { hospitalId, seriesCode: ct.seriesCode } });
+    const row = existing ?? await db.cardType.create({ data: { ...ct, hospitalId } });
     created[ct.seriesCode] = row.id;
   }
   console.log(`Seeded ${cardTypes.length} card types.`);
   return created;
 }
 
-async function seedDepartments() {
+type DepartmentSeed = { name: string; slug: string; description: string; acceptsRequestTypes: string[]; resultFields: Prisma.InputJsonObject };
+
+async function seedDepartments(hospitalId: string, extra: DepartmentSeed[] = []) {
   const departments = [
     {
       name: "Front Desk / Records",
@@ -140,19 +141,19 @@ async function seedDepartments() {
   ];
 
   const created: Record<string, string> = {};
-  for (const dept of departments) {
-    const row = await db.department.upsert({
-      where: { slug: dept.slug },
-      update: {},
-      create: dept,
-    });
+  const all: DepartmentSeed[] = [...departments, ...extra];
+  for (const dept of all) {
+    const existing = await db.department.findFirst({ where: { hospitalId, slug: dept.slug } });
+    const row = existing ?? await db.department.create({ data: { ...dept, hospitalId } });
     created[dept.slug] = row.id;
   }
-  console.log(`Seeded ${departments.length} departments.`);
+  console.log(`Seeded ${all.length} departments.`);
   return created;
 }
 
-async function seedStaff(departmentIds: Record<string, string>) {
+type StaffOverride = { fullName: string; jobTitle?: string };
+
+async function seedStaff(departmentIds: Record<string, string>, hospitalId: string, emailSuffix = "", overrides: Record<string, StaffOverride> = {}) {
   const passwordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
 
   const staff = [
@@ -170,19 +171,24 @@ async function seedStaff(departmentIds: Record<string, string>) {
 
   const created: Record<string, string> = {};
   for (const s of staff) {
+    const email = emailSuffix ? s.email.replace("@carenexa.cloud", `${emailSuffix}@carenexa.cloud`) : s.email;
+    const override = overrides[s.email];
+    const fullName = override?.fullName ?? s.fullName;
+    const jobTitle = override?.jobTitle ?? s.jobTitle;
     const row = await db.staffMember.upsert({
-      where: { email: s.email },
-      update: {},
+      where: { email },
+      update: { hospitalId, ...(override ? { fullName, jobTitle } : {}) },
       create: {
-        fullName: s.fullName,
-        email: s.email,
+        fullName,
+        email,
         passwordHash,
         role: s.role,
-        jobTitle: s.jobTitle,
+        jobTitle,
+        hospitalId,
         departmentId: departmentIds[s.departmentSlug],
       },
     });
-    created[s.email] = row.id;
+    created[email] = row.id;
   }
   console.log(`Seeded ${staff.length} staff accounts. Demo password for all: "${DEMO_PASSWORD}"`);
   return created;
@@ -638,19 +644,33 @@ const PATIENT_STORIES: PatientStory[] = [
   },
 ];
 
-async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: Record<string, string>, staffIds: Record<string, string>) {
-  const nurseId = staffIds["nurse@carenexa.cloud"];
-  const clinicianIds = [staffIds["clinician@carenexa.cloud"], staffIds["consultant@carenexa.cloud"]];
-  const labId = staffIds["lab@carenexa.cloud"];
-  const pharmacistId = staffIds["pharmacist@carenexa.cloud"];
+async function seedPatients(
+  cardTypeIds: Record<string, string>,
+  departmentIds: Record<string, string>,
+  staffIds: Record<string, string>,
+  hospitalId: string,
+  options: { stories?: PatientStory[]; emailSuffix?: string; identityByName?: Record<string, string> } = {},
+) {
+  const stories = options.stories ?? PATIENT_STORIES;
+  const staff = (base: string) => {
+    const id = staffIds[`${base}${options.emailSuffix ?? ""}@carenexa.cloud`];
+    if (!id) throw new Error(`Seed staff account missing: ${base}${options.emailSuffix ?? ""}`);
+    return id;
+  };
+  const nurseId = staff("nurse");
+  const clinicianIds = [staff("clinician"), staff("consultant")];
+  const labId = staff("lab");
+  const pharmacistId = staff("pharmacist");
+  const createdByName: Record<string, string> = {};
 
   let count = 0;
-  for (const story of PATIENT_STORIES) {
+  for (const story of stories) {
     const cardTypeId = cardTypeIds[story.cardSeries];
     const hospitalNumber = await issueHospitalNumber(cardTypeId, story.cardSeries);
 
     const patient = await db.patient.create({
       data: {
+        hospitalId,
         fullName: story.fullName,
         dateOfBirth: new Date(story.dateOfBirth),
         sex: story.sex,
@@ -664,6 +684,38 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
         nextOfKinRelation: story.nextOfKinRelation,
         cardTypeId,
         hospitalNumber,
+        identityLinks: {
+          create: {
+            hospital: { connect: { id: hospitalId } },
+            verificationStatus: "VERIFIED",
+            // A story whose patient already holds a CareNexa identity at another
+            // hospital links to it: one identity, separate local records.
+            identity: options.identityByName?.[story.fullName]
+              ? { connect: { id: options.identityByName[story.fullName] } }
+              : {
+                  create: {
+                    universalPatientNumber: `CNX-${randomUUID().replace(/-/g, "").slice(0, 12).toUpperCase()}`,
+                    verificationStatus: "VERIFIED",
+                    verificationMethod: "SYNTHETIC_DEMO",
+                    verifiedAt: new Date(),
+                  },
+                },
+          },
+        },
+      },
+    });
+
+    createdByName[story.fullName] = patient.id;
+    const identityLink = await db.patientHospitalLink.findFirstOrThrow({ where: { patientId: patient.id, hospitalId } });
+    await db.patientIdentityVerification.create({
+      data: {
+        identityId: identityLink.identityId,
+        hospitalId,
+        patientId: patient.id,
+        verifiedById: staff("records"),
+        status: "VERIFIED",
+        method: "SYNTHETIC_DEMO",
+        evidenceReference: "Synthetic seed identity verification",
       },
     });
 
@@ -674,9 +726,10 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
 
       const visit = await db.visit.create({
         data: {
+          hospitalId,
           patientId: patient.id,
           openedAt,
-          openedById: staffIds["reception@carenexa.cloud"],
+          openedById: staff("reception"),
           status: v.status,
           presentingComplaint: v.presentingComplaint,
           closedAt: v.status === "CLOSED" ? new Date(openedAt.getTime() + 2 * 60 * 60 * 1000) : null,
@@ -691,6 +744,7 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
 
         await db.request.create({
           data: {
+            hospitalId,
             visitId: visit.id,
             fromDepartmentId: departmentIds.nursing,
             toDepartmentId: departmentIds.clinician,
@@ -721,6 +775,7 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
       if (v.labs?.length) {
         const labRequest = await db.request.create({
           data: {
+            hospitalId,
             visitId: visit.id,
             fromDepartmentId: departmentIds.clinician,
             toDepartmentId: departmentIds.lab,
@@ -758,6 +813,7 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
       if (v.prescriptions?.length) {
         await db.request.create({
           data: {
+            hospitalId,
             visitId: visit.id,
             fromDepartmentId: departmentIds.clinician,
             toDepartmentId: departmentIds.pharmacy,
@@ -798,14 +854,15 @@ async function seedPatients(cardTypeIds: Record<string, string>, departmentIds: 
     count++;
   }
 
-  console.log(`Seeded ${count} patients with ${PATIENT_STORIES.reduce((s, p) => s + p.visits.length, 0)} visits of history.`);
+  console.log(`Seeded ${count} patients with ${stories.reduce((s, p) => s + p.visits.length, 0)} visits of history.`);
+  return createdByName;
 }
 
 // ---------------------------------------------------------------------------
 // Recruitment — vacancies with varied, rankable applications.
 // ---------------------------------------------------------------------------
 
-async function seedRecruitment(departmentIds: Record<string, string>) {
+async function seedRecruitment(departmentIds: Record<string, string>, hospitalId: string) {
   const vacancies = [
     {
       title: "Medical Officer",
@@ -917,11 +974,15 @@ async function seedRecruitment(departmentIds: Record<string, string>) {
   ];
 
   for (const vacancy of vacancies) {
-    const created = await db.vacancy.upsert({
-      where: { id: `seed-${vacancy.title.toLowerCase().replace(/\s+/g, "-")}` },
+    // Match an existing vacancy by hospital + title first: rows seeded before the
+    // multi-hospital change use the older "seed-<title>" ID format.
+    const existingVacancy = await db.vacancy.findFirst({ where: { hospitalId, title: vacancy.title }, orderBy: { createdAt: "asc" } });
+    const created = existingVacancy ?? await db.vacancy.upsert({
+      where: { id: `seed-${hospitalId}-${vacancy.title.toLowerCase().replace(/\s+/g, "-")}` },
       update: {},
       create: {
-        id: `seed-${vacancy.title.toLowerCase().replace(/\s+/g, "-")}`,
+        id: `seed-${hospitalId}-${vacancy.title.toLowerCase().replace(/\s+/g, "-")}`,
+        hospitalId,
         title: vacancy.title,
         departmentId: departmentIds[vacancy.departmentSlug],
         description: vacancy.description,
@@ -934,12 +995,12 @@ async function seedRecruitment(departmentIds: Record<string, string>) {
     });
 
     for (const app of vacancy.applications) {
-      const existingCandidate = await db.candidate.findFirst({ where: { email: app.email } });
-      const candidate = existingCandidate ?? (await db.candidate.create({ data: { fullName: app.fullName, email: app.email, phone: app.phone } }));
+      const existingCandidate = await db.candidate.findFirst({ where: { hospitalId, email: app.email } });
+      const candidate = existingCandidate ?? (await db.candidate.create({ data: { hospitalId, fullName: app.fullName, email: app.email, phone: app.phone } }));
 
-      const existingApplication = await db.application.findFirst({ where: { vacancyId: created.id, candidateId: candidate.id } });
+      const existingApplication = await db.application.findFirst({ where: { hospitalId, vacancyId: created.id, candidateId: candidate.id } });
       if (!existingApplication) {
-        await db.application.create({ data: { vacancyId: created.id, candidateId: candidate.id, cvText: app.cvText } });
+        await db.application.create({ data: { hospitalId, vacancyId: created.id, candidateId: candidate.id, cvText: app.cvText } });
       }
     }
   }
@@ -947,19 +1008,391 @@ async function seedRecruitment(departmentIds: Record<string, string>) {
   console.log(`Seeded ${vacancies.length} vacancies with ${vacancies.reduce((s, v) => s + v.applications.length, 0)} applications.`);
 }
 
-async function main() {
-  const cardTypeIds = await seedCardTypes();
-  const departmentIds = await seedDepartments();
-  const staffIds = await seedStaff(departmentIds);
 
-  const existingPatients = await db.patient.count();
+// ---------------------------------------------------------------------------
+// Specialist Hospital (Hospital B) — synthetic demo data.
+// ---------------------------------------------------------------------------
+
+const SPECIALIST_STAFF: Record<string, StaffOverride> = {
+  "admin@carenexa.cloud": { fullName: "Kemi Adeyemi", jobTitle: "Hospital Administrator" },
+  "records@carenexa.cloud": { fullName: "Ifeoma Nnaji", jobTitle: "Health Records Officer" },
+  "reception@carenexa.cloud": { fullName: "Sade Lawal", jobTitle: "Referral Desk Receptionist" },
+  "nurse@carenexa.cloud": { fullName: "Rukayat Sule", jobTitle: "Cardiac Nurse" },
+  "matron@carenexa.cloud": { fullName: "Esther Danjuma", jobTitle: "Matron" },
+  "clinician@carenexa.cloud": { fullName: "Dr. Olumide Bankole", jobTitle: "Consultant Cardiologist" },
+  "consultant@carenexa.cloud": { fullName: "Dr. Zainab Abubakar", jobTitle: "Consultant Haematologist" },
+  "lab@carenexa.cloud": { fullName: "Kelechi Uzor", jobTitle: "Medical Laboratory Scientist" },
+  "pharmacist@carenexa.cloud": { fullName: "Bola Akande", jobTitle: "Clinical Pharmacist" },
+  "recruiter@carenexa.cloud": { fullName: "Hadiza Yusuf", jobTitle: "HR / Recruitment Officer" },
+};
+
+const SPECIALIST_DEPARTMENTS: DepartmentSeed[] = [
+  {
+    name: "Cardiology",
+    slug: "cardiology",
+    description: "Specialist cardiovascular assessment, echocardiography and hypertension clinic.",
+    acceptsRequestTypes: ["Cardiology Review", "Echocardiogram"],
+    resultFields: { fields: [{ name: "note", label: "Cardiology note", type: "text" }] },
+  },
+  {
+    name: "Haematology",
+    slug: "haematology",
+    description: "Sickle cell, anaemia and blood disorder specialist clinic.",
+    acceptsRequestTypes: ["Haematology Review"],
+    resultFields: { fields: [{ name: "note", label: "Haematology note", type: "text" }] },
+  },
+];
+
+// The shared patient keeps the same demographics as their General Hospital
+// record (same person), with a separate Specialist Hospital clinical history.
+function sharedSpecialistStory(name: string, visits: VisitSpec[]): PatientStory {
+  const base = PATIENT_STORIES.find((story) => story.fullName === name);
+  if (!base) throw new Error(`Shared demo patient ${name} missing from General Hospital stories`);
+  return { ...base, cardSeries: "GOP", visits };
+}
+
+const SHARED_PATIENT = "Adebayo Ogundimu";
+
+function specialistStories(): PatientStory[] {
+  return [
+    sharedSpecialistStory(SHARED_PATIENT, [
+      {
+        monthsAgo: 4.7,
+        presentingComplaint: "Cardiology review on referral: hypertension poorly controlled on two agents",
+        vitals: { systolicBp: 158, diastolicBp: 98, temperatureC: 36.6, pulseBpm: 80, respiratoryRate: 16, weightKg: 85 },
+        labs: [
+          { testName: "LDL Cholesterol", value: 172, unit: "mg/dL", low: 0, high: 130, abnormal: true },
+          { testName: "Serum Creatinine", value: 1.2, unit: "mg/dL", low: 0.6, high: 1.3 },
+          { testName: "ECG", qualitative: "Left ventricular hypertrophy by voltage criteria", abnormal: true },
+        ],
+        note: "Referred from General Hospital GOPD. Echo: concentric LVH, EF 58%. Renal function preserved. Discussed adherence and salt intake.",
+        diagnosis: { description: "Hypertensive heart disease with left ventricular hypertrophy", plan: "Optimise antihypertensives, start statin, return to GOPD with counter-referral; cardiology review in 6 months" },
+        prescriptions: [
+          { drugName: "Lisinopril", dosage: "20mg", frequency: "OD", duration: "3 months", dispensed: true },
+          { drugName: "Atorvastatin", dosage: "20mg", frequency: "Nocte", duration: "3 months", dispensed: true },
+        ],
+        status: "CLOSED",
+        followUpInDays: 180,
+      },
+    ]),
+    {
+      fullName: "Hauwa Musa",
+      dateOfBirth: "1979-07-22",
+      sex: "FEMALE",
+      phone: "0806 551 2093",
+      address: "3 Ahmadu Bello Way, Kaduna",
+      bloodGroup: "A+",
+      genotype: "AA",
+      allergies: ["Sulfa drugs"],
+      cardSeries: "PVT",
+      nextOfKinName: "Ibrahim Musa",
+      nextOfKinPhone: "0806 551 2094",
+      nextOfKinRelation: "Husband",
+      visits: [
+        {
+          monthsAgo: 6,
+          presentingComplaint: "Breathlessness on exertion and ankle swelling",
+          vitals: { systolicBp: 132, diastolicBp: 84, temperatureC: 36.7, pulseBpm: 96, respiratoryRate: 22, weightKg: 78 },
+          labs: [{ testName: "NT-proBNP", value: 1450, unit: "pg/mL", low: 0, high: 125, abnormal: true }],
+          note: "Bibasal crackles, pitting oedema to mid-shin. Echo: EF 35%.",
+          diagnosis: { description: "Heart failure with reduced ejection fraction", plan: "Start diuretic and ACE inhibitor, fluid restriction, review in 6 weeks" },
+          prescriptions: [{ drugName: "Furosemide", dosage: "40mg", frequency: "OD", duration: "6 weeks", dispensed: true }],
+          status: "CLOSED",
+          followUpInDays: 42,
+        },
+        {
+          monthsAgo: 4.5,
+          presentingComplaint: "Heart failure clinic follow-up",
+          vitals: { systolicBp: 124, diastolicBp: 78, temperatureC: 36.5, pulseBpm: 82, respiratoryRate: 18, weightKg: 74 },
+          labs: [{ testName: "NT-proBNP", value: 640, unit: "pg/mL", low: 0, high: 125, abnormal: true }],
+          note: "Improved exercise tolerance, oedema resolved. Weight down 4kg.",
+          diagnosis: { description: "Heart failure with reduced ejection fraction, improving", plan: "Continue therapy, repeat echo in 3 months" },
+          status: "CLOSED",
+          followUpInDays: 90,
+        },
+      ],
+    },
+    {
+      fullName: "Chukwudi Eze",
+      dateOfBirth: "1998-11-02",
+      sex: "MALE",
+      phone: "0809 330 4471",
+      address: "21 Ogui Road, Enugu",
+      bloodGroup: "B+",
+      genotype: "SS",
+      cardSeries: "GOP",
+      nextOfKinName: "Ngozi Eze",
+      nextOfKinPhone: "0809 330 4472",
+      nextOfKinRelation: "Mother",
+      visits: [
+        {
+          monthsAgo: 3,
+          presentingComplaint: "Haematology clinic review, two crises in the last quarter",
+          vitals: { systolicBp: 112, diastolicBp: 70, temperatureC: 36.9, pulseBpm: 88, respiratoryRate: 18, weightKg: 61 },
+          labs: [
+            { testName: "Haemoglobin", value: 7.4, unit: "g/dL", low: 13, high: 17, abnormal: true },
+            { testName: "Fetal Haemoglobin (HbF)", value: 6, unit: "%", low: 0, high: 2, abnormal: true },
+          ],
+          note: "Adherent to folic acid. Discussed hydroxyurea; patient agreed.",
+          diagnosis: { description: "Sickle cell anaemia with recurrent vaso-occlusive crises", plan: "Start hydroxyurea, FBC monitoring every 4 weeks" },
+          prescriptions: [{ drugName: "Hydroxyurea", dosage: "500mg", frequency: "OD", duration: "3 months", dispensed: true }],
+          status: "CLOSED",
+          followUpInDays: 28,
+        },
+        {
+          monthsAgo: 1,
+          presentingComplaint: "Hydroxyurea monitoring visit",
+          labs: [{ testName: "Haemoglobin", value: 8.1, unit: "g/dL", low: 13, high: 17, abnormal: true }],
+          note: "No crises since starting hydroxyurea. Mild improvement in Hb.",
+          diagnosis: { description: "Sickle cell anaemia, responding to hydroxyurea", plan: "Continue current dose, review in 8 weeks" },
+          status: "CLOSED",
+          followUpInDays: 56,
+        },
+      ],
+    },
+  ];
+}
+
+// Historical referrals with timestamped events, so the pilot metrics on /admin
+// are computed from persisted events rather than showing empty values.
+// Grants are created already expired: historical sharing, not current access.
+async function seedReferralHistory(input: {
+  hospitalAId: string;
+  hospitalBId: string;
+  staffA: Record<string, string>;
+  staffB: Record<string, string>;
+  departmentsB: Record<string, string>;
+  departmentsA: Record<string, string>;
+}) {
+  const existing = await db.referral.count({
+    where: { sourceHospitalId: input.hospitalAId, destinationHospitalId: input.hospitalBId },
+  });
+  if (existing > 0) {
+    console.log(`Skipping referral history — ${existing} referrals already exist.`);
+    return;
+  }
+
+  const minutes = (n: number) => n * 60 * 1000;
+  const days = (n: number) => n * DAY_MS;
+  const clinicianA = input.staffA["clinician@carenexa.cloud"];
+  const cardiologist = input.staffB["clinician-specialist@carenexa.cloud"];
+  const haematologist = input.staffB["consultant-specialist@carenexa.cloud"];
+  const receptionB = input.staffB["reception-specialist@carenexa.cloud"];
+
+  type EventSpec = { status: Parameters<typeof db.referralEvent.create>[0]["data"]["status"]; at: number; actorId: string; detail?: string };
+
+  async function createHistoricalReferral(spec: {
+    patientName: string;
+    requestedService: string;
+    reason: string;
+    urgency: "ROUTINE" | "URGENT";
+    destinationDepartmentId: string;
+    startDaysAgo: number;
+    finalStatus: EventSpec["status"];
+    categories: string[];
+    events: EventSpec[];
+    appointmentAt?: number;
+    counterReferral?: { summary: string; at: number };
+  }) {
+    const patient = await db.patient.findFirst({ where: { hospitalId: input.hospitalAId, fullName: spec.patientName } });
+    const link = patient && await db.patientHospitalLink.findFirst({ where: { patientId: patient.id, hospitalId: input.hospitalAId } });
+    if (!patient || !link) {
+      console.log(`Skipping historical referral for ${spec.patientName} — patient not found at General Hospital.`);
+      return;
+    }
+    const start = Date.now() - days(spec.startDaysAgo);
+    const sourceVisit = await db.visit.findFirst({
+      where: { patientId: patient.id, hospitalId: input.hospitalAId, openedAt: { lte: new Date(start) } },
+      orderBy: { openedAt: "desc" },
+    });
+
+    const referral = await db.referral.create({
+      data: {
+        identityId: link.identityId,
+        patientId: patient.id,
+        sourceVisitId: sourceVisit?.id ?? null,
+        sourceHospitalId: input.hospitalAId,
+        destinationHospitalId: input.hospitalBId,
+        sourceDepartmentId: input.departmentsA.clinician,
+        destinationDepartmentId: spec.destinationDepartmentId,
+        referringStaffId: clinicianA,
+        reason: spec.reason,
+        urgency: spec.urgency,
+        requestedService: spec.requestedService,
+        clinicalInformation: spec.counterReferral
+          ? { synthetic: true, counterReferral: { summary: spec.counterReferral.summary, createdAt: new Date(start + spec.counterReferral.at).toISOString() } }
+          : { synthetic: true },
+        status: spec.finalStatus,
+        appointmentScheduledFor: spec.appointmentAt ? new Date(start + spec.appointmentAt) : null,
+        createdAt: new Date(start - minutes(20)),
+        submittedAt: new Date(start),
+      },
+    });
+
+    await db.referralEvent.create({ data: { referralId: referral.id, actorId: clinicianA, status: "DRAFT", detail: "Referral draft created.", createdAt: new Date(start - minutes(20)) } });
+    for (const event of spec.events) {
+      await db.referralEvent.create({
+        data: { referralId: referral.id, actorId: event.actorId, status: event.status, detail: event.detail ?? null, createdAt: new Date(start + event.at) },
+      });
+    }
+
+    await db.patientAccessGrant.create({
+      data: {
+        identityId: link.identityId,
+        sourceHospitalId: input.hospitalAId,
+        receivingHospitalId: input.hospitalBId,
+        requestingStaffId: clinicianA,
+        purpose: `Referral ${referral.id}: ${spec.requestedService}`,
+        recordCategories: spec.categories,
+        status: "ACTIVE",
+        authorizationEvidence: "Synthetic demo consent",
+        authorizedAt: new Date(start),
+        expiresAt: new Date(start + days(7)),
+        referralId: referral.id,
+        createdAt: new Date(start),
+      },
+    });
+    if (spec.counterReferral) {
+      await db.patientAccessGrant.create({
+        data: {
+          identityId: link.identityId,
+          sourceHospitalId: input.hospitalBId,
+          receivingHospitalId: input.hospitalAId,
+          requestingStaffId: cardiologist,
+          purpose: `Counter-referral ${referral.id}`,
+          recordCategories: ["COUNTER_REFERRAL"],
+          status: "ACTIVE",
+          authorizationEvidence: "Synthetic demo consent",
+          authorizedAt: new Date(start + spec.counterReferral.at),
+          expiresAt: new Date(start + spec.counterReferral.at + days(7)),
+          referralId: referral.id,
+          createdAt: new Date(start + spec.counterReferral.at),
+        },
+      });
+    }
+  }
+
+  // 1. Full lifecycle, completed with a returned discharge summary.
+  await createHistoricalReferral({
+    patientName: SHARED_PATIENT,
+    requestedService: "Cardiology assessment",
+    reason: "Hypertension poorly controlled on amlodipine and lisinopril; headaches. Please assess for end-organ damage.",
+    urgency: "ROUTINE",
+    destinationDepartmentId: input.departmentsB.cardiology,
+    startDaysAgo: 150,
+    finalStatus: "COMPLETED",
+    categories: ["DEMOGRAPHICS", "VISITS", "VITALS", "LAB_RESULTS", "DIAGNOSES", "PRESCRIPTIONS"],
+    appointmentAt: days(9),
+    events: [
+      { status: "SUBMITTED", at: 0, actorId: clinicianA, detail: "Patient authorization recorded; referral submitted." },
+      { status: "ACKNOWLEDGED", at: minutes(42), actorId: receptionB },
+      { status: "UNDER_REVIEW", at: minutes(150), actorId: cardiologist },
+      { status: "ACCEPTED", at: days(1), actorId: cardiologist },
+      { status: "APPOINTMENT_SCHEDULED", at: days(1) + minutes(10), actorId: receptionB },
+      { status: "ARRIVAL_CONFIRMED", at: days(9), actorId: receptionB, detail: "Identity verified in person at Specialist Hospital." },
+      { status: "TREATMENT_IN_PROGRESS", at: days(9) + minutes(30), actorId: cardiologist },
+      { status: "DISCHARGED", at: days(9) + minutes(240), actorId: cardiologist },
+      { status: "COUNTER_REFERRAL_SUBMITTED", at: days(10), actorId: cardiologist, detail: "Patient-authorized counter-referral summary submitted." },
+      { status: "COMPLETED", at: days(12), actorId: cardiologist },
+    ],
+    counterReferral: {
+      at: days(10),
+      summary: "Seen in cardiology clinic. Echo: concentric LVH, EF 58%. Renal function preserved. Diagnosis: hypertensive heart disease with LVH. Lisinopril increased to 20mg OD; atorvastatin 20mg nocte started. Please continue BP monitoring at GOPD, reinforce adherence. Cardiology review in 6 months.",
+    },
+  });
+
+  // 2. Needed more information, accepted, but the patient has not yet arrived.
+  await createHistoricalReferral({
+    patientName: "Efe Omoregie",
+    requestedService: "Haematology review",
+    reason: "Sickle cell disease (SS) with two crises in nine months. Please review for disease-modifying therapy.",
+    urgency: "URGENT",
+    destinationDepartmentId: input.departmentsB.haematology,
+    startDaysAgo: 60,
+    finalStatus: "APPOINTMENT_SCHEDULED",
+    categories: ["DEMOGRAPHICS", "DIAGNOSES", "PRESCRIPTIONS"],
+    appointmentAt: days(18),
+    events: [
+      { status: "SUBMITTED", at: 0, actorId: clinicianA, detail: "Patient authorization recorded; referral submitted." },
+      { status: "ACKNOWLEDGED", at: minutes(185), actorId: receptionB },
+      { status: "MORE_INFORMATION_REQUESTED", at: minutes(320), actorId: haematologist, detail: "Please share recent full blood count and current hydroxyurea dose, if any." },
+      { status: "SUBMITTED", at: days(1), actorId: clinicianA, detail: "FBC from last clinic visit added." },
+      { status: "ACCEPTED", at: days(1) + minutes(90), actorId: haematologist },
+      { status: "APPOINTMENT_SCHEDULED", at: days(1) + minutes(100), actorId: receptionB },
+    ],
+  });
+
+  console.log("Seeded 2 historical referrals for pilot metrics.");
+}
+
+async function main() {
+  const hospitalA = await db.hospital.upsert({
+    where: { slug: "general-hospital" },
+    update: { name: "General Hospital", isActive: true },
+    create: { name: "General Hospital", slug: "general-hospital" },
+  });
+  const hospitalB = await db.hospital.upsert({
+    where: { slug: "specialist-hospital" },
+    update: { name: "Specialist Hospital", isActive: true },
+    create: { name: "Specialist Hospital", slug: "specialist-hospital" },
+  });
+
+  const cardTypeIds = await seedCardTypes(hospitalA.id);
+  const departmentIds = await seedDepartments(hospitalA.id);
+  const staffIds = await seedStaff(departmentIds, hospitalA.id);
+
+  const existingPatients = await db.patient.count({ where: { hospitalId: hospitalA.id } });
   if (existingPatients === 0) {
-    await seedPatients(cardTypeIds, departmentIds, staffIds);
+    await seedPatients(cardTypeIds, departmentIds, staffIds, hospitalA.id);
   } else {
     console.log(`Skipping patient seed — ${existingPatients} patients already exist.`);
   }
 
-  await seedRecruitment(departmentIds);
+  await seedRecruitment(departmentIds, hospitalA.id);
+
+  const cardTypeIdsB = await seedCardTypes(hospitalB.id);
+  const departmentIdsB = await seedDepartments(hospitalB.id, SPECIALIST_DEPARTMENTS);
+  const staffIdsB = await seedStaff(departmentIdsB, hospitalB.id, "-specialist", SPECIALIST_STAFF);
+  await seedRecruitment(departmentIdsB, hospitalB.id);
+
+  const existingPatientsB = await db.patient.count({ where: { hospitalId: hospitalB.id } });
+  if (existingPatientsB === 0) {
+    // Link Hospital B's record for the shared patient to the identity they
+    // already hold at General Hospital: one person, two local records.
+    const sharedAtA = await db.patient.findFirst({ where: { hospitalId: hospitalA.id, fullName: SHARED_PATIENT } });
+    const sharedLink = sharedAtA && await db.patientHospitalLink.findFirst({ where: { patientId: sharedAtA.id, hospitalId: hospitalA.id } });
+    if (!sharedLink) console.log(`${SHARED_PATIENT} not found at General Hospital — Specialist Hospital record will get its own identity.`);
+    await seedPatients(cardTypeIdsB, departmentIdsB, staffIdsB, hospitalB.id, {
+      stories: specialistStories(),
+      emailSuffix: "-specialist",
+      identityByName: sharedLink ? { [SHARED_PATIENT]: sharedLink.identityId } : {},
+    });
+  } else {
+    console.log(`Skipping Specialist Hospital patient seed — ${existingPatientsB} patients already exist.`);
+  }
+
+  await seedReferralHistory({
+    hospitalAId: hospitalA.id,
+    hospitalBId: hospitalB.id,
+    staffA: staffIds,
+    staffB: staffIdsB,
+    departmentsA: departmentIds,
+    departmentsB: departmentIdsB,
+  });
+
+  const platformPasswordHash = await bcrypt.hash(DEMO_PASSWORD, 10);
+  await db.staffMember.upsert({
+    where: { email: "platform-admin@carenexa.cloud" },
+    update: { isPlatformAdmin: true, hospitalId: null, departmentId: null },
+    create: {
+      fullName: "CareNexa Platform Administrator",
+      email: "platform-admin@carenexa.cloud",
+      passwordHash: platformPasswordHash,
+      role: "ADMIN",
+      jobTitle: "Platform Administrator",
+      isPlatformAdmin: true,
+    },
+  });
 }
 
 main()

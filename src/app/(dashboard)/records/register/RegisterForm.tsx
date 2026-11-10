@@ -26,6 +26,14 @@ export function RegisterForm({ cardTypes }: { cardTypes: { id: string; name: str
 
       <fieldset className="grid grid-cols-2 gap-4">
         <legend className="col-span-2 text-sm font-semibold text-[var(--color-text)]">Identity</legend>
+        <div className="col-span-2 rounded-md border border-[var(--color-border)] p-3">
+          <Field label="Existing CareNexa number (optional)" htmlFor="universalPatientNumber" hint="Only link an existing network identity after checking the patient in person.">
+            <Input id="universalPatientNumber" name="universalPatientNumber" placeholder="CNX-…" />
+          </Field>
+          <Field label="In-person verification evidence reference" htmlFor="identityEvidenceReference" hint="Required only when linking an existing CareNexa number.">
+            <Input id="identityEvidenceReference" name="identityEvidenceReference" placeholder="Consent/verification record reference" />
+          </Field>
+        </div>
         <div className="col-span-2">
           <Field label="Full name" htmlFor="fullName">
             <Input id="fullName" name="fullName" required placeholder="e.g. Chinwe Okafor" />

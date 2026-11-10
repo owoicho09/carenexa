@@ -25,6 +25,7 @@ export default async function PatientsPage({
   const [patients, cardTypes] = await Promise.all([
     db.patient.findMany({
       where: {
+        hospitalId: session.hospitalId,
         isDeleted: false,
         ...(cardTypeId ? { cardTypeId } : {}),
         ...(query
@@ -41,7 +42,7 @@ export default async function PatientsPage({
       orderBy: { fullName: "asc" },
       take: 50,
     }),
-    db.cardType.findMany({ orderBy: { name: "asc" } }),
+    db.cardType.findMany({ where: { hospitalId: session.hospitalId }, orderBy: { name: "asc" } }),
   ]);
 
   return (

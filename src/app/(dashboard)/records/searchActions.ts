@@ -4,18 +4,19 @@ import { db } from "@/lib/db";
 import { requireSession } from "@/lib/auth";
 
 export async function getOpenVisitForPatient(patientId: string) {
-  await requireSession();
-  const visit = await db.visit.findFirst({ where: { patientId, status: "OPEN" } });
+  const session = await requireSession();
+  const visit = await db.visit.findFirst({ where: { hospitalId: session.hospitalId, patientId, status: "OPEN" } });
   return visit?.id ?? null;
 }
 
 export async function searchPatients(query: string) {
-  await requireSession();
+  const session = await requireSession();
   const q = query.trim();
   if (q.length < 2) return [];
 
   return db.patient.findMany({
     where: {
+      hospitalId: session.hospitalId,
       isDeleted: false,
       OR: [
         { fullName: { contains: q, mode: "insensitive" } },

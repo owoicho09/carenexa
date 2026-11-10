@@ -2,10 +2,12 @@ import { notFound } from "next/navigation";
 import { db } from "@/lib/db";
 import { PageHeader, Panel } from "@/components/ui/Panel";
 import { EditPatientForm } from "./EditPatientForm";
+import { requireSession } from "@/lib/auth";
 
 export default async function EditPatientPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const patient = await db.patient.findUnique({ where: { id } });
+  const session = await requireSession();
+  const patient = await db.patient.findFirst({ where: { id, hospitalId: session.hospitalId } });
   if (!patient) notFound();
 
   return (
