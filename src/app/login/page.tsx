@@ -22,7 +22,8 @@ export default async function LoginPage() {
             <Logo size={44} />
           </div>
           <h1 className="text-lg font-semibold text-[var(--color-text)]">CareNexa</h1>
-          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Sign in with your hospital account</p>
+          <p className="mt-1 text-sm text-[var(--color-text-muted)]">Continuity of care, across every hospital</p>
+          <p className="mt-0.5 text-xs text-[var(--color-text-faint)]">Sign in with your hospital account</p>
         </div>
         <LoginForm demo={demo} />
         <p className="mt-4 text-center text-sm">

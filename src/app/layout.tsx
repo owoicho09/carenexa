@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   metadataBase: new URL("https://carenexa.cloud"),
   title: "CareNexa",
-  description: "Hospital records, departments, and recruitment — one system.",
+  description: "Continuity of care across every department and hospital — one connected patient journey.",
 };
 
 // This is a desktop-first clinical workstation app: the layout itself (fixed

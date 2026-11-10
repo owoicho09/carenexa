@@ -6,9 +6,9 @@ import { Logo } from "@/components/ui/Logo";
 import { Icon } from "./Icon";
 
 const NAV = [
-  { href: "#features", label: "Features" },
-  { href: "#how-it-works", label: "How it works" },
-  { href: "#modules", label: "Modules" },
+  { href: "#continuity", label: "Continuity of care" },
+  { href: "#journey", label: "Patient journey" },
+  { href: "#features", label: "Platform" },
   { href: "#security", label: "Security" },
   { href: "#goal", label: "Our goal" },
 ];

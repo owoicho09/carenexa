@@ -21,6 +21,10 @@ type Step = {
 
 const CONCEPTS = [
   {
+    title: "The goal: continuity of care",
+    body: "Every stage of a patient's journey — emergency, hospital care, rehabilitation, home and follow-up — connected, so no patient is forgotten, no information is lost and no stage is disconnected.",
+  },
+  {
     title: "Two hospitals, one network",
     body: "General Hospital and Specialist Hospital run on one CareNexa system but keep separate staff, patients and records. The coloured bar at the top shows which hospital you are working in.",
   },
@@ -43,6 +47,10 @@ const CONCEPTS = [
   {
     title: "Everything is audited",
     body: "Every view of shared records, consent, referral step and AI access is written to each hospital's audit log.",
+  },
+  {
+    title: "What the demo shows",
+    body: "A patient referred from General Hospital to Specialist Hospital, checked in, treated and discharged — with the care report returned home. That is continuity of care across hospitals.",
   },
 ];
 
@@ -156,7 +164,7 @@ export default async function GuidePage() {
     <div className="mx-auto w-full max-w-4xl space-y-6 p-6">
       <PageHeader
         title="Welcome to CareNexa"
-        description="A connected healthcare network prototype. Start with the ideas below, then follow the walkthrough — it takes about ten minutes."
+        description="A prototype for continuity of care: one patient journey, connected across hospitals. Start with the ideas below, then follow the walkthrough — about ten minutes."
       />
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
