@@ -268,7 +268,7 @@ export default async function PatientRecordPage({ params }: { params: Promise<{ 
         <AiSummaryPanel patientId={patient.id} aiConfigured={isAiConfigured()} initialSummary={latestSummary} />
         <ClinicalInsightsPanel
           patientId={patient.id}
-          aiConfigured={isOpenAiConfigured()}
+          aiConfigured={isAiConfigured() || isOpenAiConfigured()}
           canReview={canReviewInsights}
           insights={insights}
           ruleFlags={ruleFlags}

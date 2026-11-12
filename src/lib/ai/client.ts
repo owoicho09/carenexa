@@ -6,7 +6,7 @@ export type AiProvider = "ANTHROPIC" | "OPENAI";
 // Cheap/fast model for high-volume, low-risk tasks: summarising, note structuring.
 export const AI_MODEL_FAST = process.env.ANTHROPIC_MODEL_FAST || "claude-haiku-4-5-20251001";
 // Stronger model for judgement-adjacent tasks where reasoning quality matters: CV screening.
-export const AI_MODEL_REASONING = process.env.ANTHROPIC_MODEL_REASONING || "claude-sonnet-5";
+export const AI_MODEL_REASONING = process.env.ANTHROPIC_MODEL_REASONING || "claude-sonnet-5-5";
 export const AI_MODEL_CLINICAL = process.env.OPENAI_MODEL_CLINICAL || "gpt-4.1-mini";
 
 let client: Anthropic | null = null;
@@ -32,14 +32,25 @@ export type JsonSchemaSpec = { name: string; schema: Record<string, unknown> };
 export async function generateText(input: { provider?: AiProvider; model: string; system: string; prompt: string; maxTokens?: number; jsonSchema?: JsonSchemaSpec }) {
   if (input.provider === "OPENAI") return generateOpenAiText(input);
   const anthropic = getAiClient();
+  if (input.jsonSchema) {
+    // Structured output on Claude: constrain the reply to the JSON schema.
+    const message = await anthropic.messages.create({
+      model: input.model,
+      max_tokens: input.maxTokens ?? 1024,
+      system: input.system,
+      output_config: { format: { type: "json_schema", schema: input.jsonSchema.schema } },
+      messages: [{ role: "user", content: input.prompt }],
+    });
+    const text = message.content.find((b) => b.type === "text");
+    return text?.type === "text" ? text.text : "";
+  }
   const message = await anthropic.messages.create({
     model: input.model,
     max_tokens: input.maxTokens ?? 1024,
     system: input.system,
     messages: [{ role: "user", content: input.prompt }],
   });
-  const block = message.content.find((b) => b.type === "text");
-  return block?.type === "text" ? block.text : "";
+  return message.content.filter((b) => b.type === "text").map((b) => (b.type === "text" ? b.text : "")).join("\n").trim();
 }
 
 async function generateOpenAiText(input: { model: string; system: string; prompt: string; maxTokens?: number; jsonSchema?: JsonSchemaSpec }) {

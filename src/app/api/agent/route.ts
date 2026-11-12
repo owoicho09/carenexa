@@ -15,7 +15,13 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "No messages given." }, { status: 400 });
   }
 
-  const result = await runAgentLoop(session, body.messages);
+  let result;
+  try {
+    result = await runAgentLoop(session, body.messages);
+  } catch (e) {
+    console.error("[agent]", e);
+    return NextResponse.json({ error: "I hit a snag reaching the assistant — please try that again." }, { status: 502 });
+  }
 
   if (result.done) {
     return NextResponse.json({ done: true, messages: result.messages, reply: result.reply });

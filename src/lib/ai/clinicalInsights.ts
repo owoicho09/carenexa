@@ -2,27 +2,39 @@ import "server-only";
 import { db } from "@/lib/db";
 import { logAudit } from "@/lib/audit";
 import { authorizedCategories } from "@/lib/tenantAccess";
-import { AI_MODEL_CLINICAL, generateText, isOpenAiConfigured } from "@/lib/ai/client";
+import { AI_MODEL_CLINICAL, AI_MODEL_REASONING, generateText, isAiConfigured, isOpenAiConfigured, type AiProvider } from "@/lib/ai/client";
 import { attachEvidence, INSIGHT_JSON_SCHEMA, parseInsightResponse } from "@/lib/ai/insightParsing";
 import { CLINICAL_RULES_VERSION, deterministicFlags, describeDataGaps, type CoverageSource } from "@/lib/clinicalRules";
 import type { ClinicalInsightType } from "@/generated/prisma/enums";
 
-const PROMPT_VERSION = "clinical-insights-v2";
+const PROMPT_VERSION = "clinical-insights-v3";
 
-const SYSTEM_PROMPT = `You are a clinical decision-support assistant for clinicians. Use only the structured records provided in "evidence".
-Rules:
-- Do not diagnose, prescribe, recommend starting/stopping/changing medication, or claim clinical validation or accuracy.
-- Every observation must cite one or more exact recordId values from "evidence". Never cite an ID that is not in "evidence".
-- "ruleFlags" are deterministic flags already shown to the clinician. Do not restate them; add context, trends or patterns across encounters instead.
-- Records may come from several hospitals (hospitalName). Note when a pattern spans hospitals.
-- State uncertainty plainly. Prefer "may", "consider reviewing", "documented as".
-- In "limitations", list information that is missing, unavailable or too sparse to support conclusions, using "dataGaps" as a starting point.
-- If evidence is insufficient, return an empty observations array and explain why in limitations.
+const SYSTEM_PROMPT = `You are CareNexa Clinical Insights, an expert clinical decision-support assistant working for a busy clinician in a Nigerian hospital. Think like an experienced consultant physician reviewing the chart before a ward round: notice what matters, connect findings across visits, and surface it crisply. Use ONLY the structured records in "evidence".
+
+How to analyse:
+- Read every record. Compute the patient's age from date of birth and "today". Build a timeline across visits and hospitals.
+- Interpret values against standard adult reference ranges (adjust for age and sex where relevant). Examples: BP >=140/90 elevated, >=180/120 severely elevated; temperature >=38.0 C febrile; pulse >100 tachycardic, <50 bradycardic; respiratory rate >20 raised; BMI from weight and height when both exist; fasting glucose >=7.0 mmol/L or random >=11.1 mmol/L raised; HbA1c >=6.5%; haemoglobin low if <12 g/dL (female) or <13 g/dL (male); creatinine/eGFR, potassium, sodium, liver enzymes, WBC and platelets against usual ranges. Respect the unit given in the record.
+- Look for: values trending in the wrong direction across encounters (quote the actual numbers and dates, e.g. "BP rose from 132/84 on 3 Feb to 158/98 on 9 Jun"); recurrent complaints; abnormal results without a documented follow-up; missed or overdue follow-up dates; medications that may conflict with a recorded allergy, genotype (e.g. SS/SC) or another active medication; medicines prescribed but not dispensed; combinations of risk factors (e.g. raised BP + raised glucose + weight gain); conditions common in Nigeria such as recurrent malaria, sickle cell disease, hypertension, diabetes and typhoid.
+- Prioritise. Order observations from most to least clinically important. Lead with anything that may need attention today.
+
+How to write:
+- "title": a short, specific clinical headline starting with a priority tag "[High]", "[Moderate]" or "[Low]", e.g. "[High] Blood pressure rising across last 3 visits". Never vague titles like "Vitals observation".
+- "summary": 2-4 sentences in plain clinical English. State what the records show with concrete values and dates, why it matters, and what a clinician might consider reviewing ("consider repeating", "worth confirming", "may warrant review of"). No filler.
+- Return 3-6 high-quality observations when the evidence supports it; fewer when it does not. Quality over quantity, never pad.
+- Every observation must cite the exact recordId values it relies on from "evidence". Never cite an ID that is not in "evidence".
+- "ruleFlags" are simple automatic flags already shown to the clinician. Do not merely restate them; add the context, trend or connection they miss.
+- If records come from several hospitals (hospitalName), say when a pattern spans hospitals.
+
+Safety boundaries (non-negotiable):
+- Do not state a definitive diagnosis, do not prescribe, and do not tell the clinician to start, stop or change a specific drug or dose. You may say a finding "may warrant review" of a medication or plan.
+- Do not invent data or claim certainty the record cannot support.
+- In "limitations", list concrete missing or sparse information that would change the picture (use "dataGaps" as a starting point), e.g. "No HbA1c recorded", "Only one BP reading available".
+
 Requested insight types:
-- RISK_ASSESSMENT: potential concerns for clinician review, with the evidence behind each.
-- PATTERN_DETECTION: recurring or trending findings across multiple encounters, with dates.
-- CLINICAL_INSIGHT: abnormal results, relevant history and possible follow-up considerations.
-- LONGITUDINAL_SUMMARY: a concise history across all provided records, one observation per theme.`;
+- RISK_ASSESSMENT: the most important potential risks for this patient right now, each with the supporting evidence and why it matters.
+- PATTERN_DETECTION: recurring or trending findings across multiple encounters, with the dates and values that form the pattern.
+- CLINICAL_INSIGHT: the key things a clinician should notice before seeing this patient: abnormal results, unaddressed issues, safety concerns, follow-up gaps.
+- LONGITUDINAL_SUMMARY: a concise history across all records, one observation per clinical theme (e.g. cardiovascular, infections, medications, follow-up adherence).`;
 
 const PATIENT_RECORD_INCLUDE = {
   visits: {
@@ -68,7 +80,7 @@ function recordsForPatient(
       add(visit.id, "VISIT", visit.id, visit.openedAt, `Visit ${visit.status}; presenting complaint ${visit.presentingComplaint ?? "not recorded"}; follow-up ${visit.followUpDate?.toISOString().slice(0, 10) ?? "not recorded"}.`);
     }
     if (allow("VITALS")) {
-      for (const value of visit.vitals ?? []) add(value.id, "VITALS", visit.id, value.recordedAt, `BP ${value.systolicBp ?? "?"}/${value.diastolicBp ?? "?"}; temperature ${value.temperatureC ?? "?"} C; pulse ${value.pulseBpm ?? "?"}; respiratory rate ${value.respiratoryRate ?? "?"}; weight ${value.weightKg ?? "?"} kg.`);
+      for (const value of visit.vitals ?? []) add(value.id, "VITALS", visit.id, value.recordedAt, `BP ${value.systolicBp ?? "?"}/${value.diastolicBp ?? "?"}; temperature ${value.temperatureC ?? "?"} C; pulse ${value.pulseBpm ?? "?"}; respiratory rate ${value.respiratoryRate ?? "?"}; weight ${value.weightKg ?? "?"} kg; height ${value.heightCm ?? "?"} cm.`);
     }
     if (allow("LAB_RESULTS")) {
       for (const value of visit.labResults ?? []) add(value.id, "LAB_RESULT", visit.id, value.enteredAt, `${value.testName}: ${value.resultType === "NUMERIC" ? `${value.value} ${value.unit}` : value.qualitativeValue}; abnormal flag ${value.isAbnormal}.`);
@@ -199,7 +211,10 @@ export async function generateClinicalInsights(
   actorId: string,
   type: ClinicalInsightType,
 ) {
-  if (!isOpenAiConfigured()) return { error: "Clinical insights are not configured (OPENAI_API_KEY missing)." };
+  // Prefer Claude; fall back to OpenAI if only that key is present.
+  const provider: AiProvider | null = isAiConfigured() ? "ANTHROPIC" : isOpenAiConfigured() ? "OPENAI" : null;
+  if (!provider) return { error: "Clinical insights are not configured (no AI API key set)." };
+  const model = provider === "ANTHROPIC" ? AI_MODEL_REASONING : AI_MODEL_CLINICAL;
 
   const context = await loadAuthorizedEvidence(patientId, hospitalId);
   if (!context) return { error: "Patient not found in this hospital." };
@@ -221,6 +236,7 @@ export async function generateClinicalInsights(
   const dataGaps = describeDataGaps({ patient: context.patient, identityVerifiedHere: context.identityVerifiedHere, sources: context.sources });
   const prompt = JSON.stringify({
     requestedInsight: type,
+    today: new Date().toISOString().slice(0, 10),
     sources: context.sources,
     ruleFlags: ruleFlags.map(({ ruleId, title }) => ({ ruleId, title })),
     dataGaps,
@@ -228,8 +244,9 @@ export async function generateClinicalInsights(
   });
   let raw: string;
   try {
-    raw = await generateText({ provider: "OPENAI", model: AI_MODEL_CLINICAL, system: SYSTEM_PROMPT, prompt, maxTokens: 1600, jsonSchema: INSIGHT_JSON_SCHEMA });
-  } catch {
+    raw = await generateText({ provider, model, system: SYSTEM_PROMPT, prompt, maxTokens: 3000, jsonSchema: INSIGHT_JSON_SCHEMA });
+  } catch (e) {
+    console.error("[clinical-insights]", e);
     return { error: "The AI service could not be reached. Try again shortly." };
   }
   const parsed = parseInsightResponse(raw);
@@ -241,8 +258,8 @@ export async function generateClinicalInsights(
       hospitalId,
       type: "RESULT_CONTEXT",
       visitId: context.patient.visits.at(-1)?.id,
-      model: AI_MODEL_CLINICAL,
-      provider: "OPENAI",
+      model,
+      provider,
       generatedById: actorId,
       promptVersion: PROMPT_VERSION,
       input: { patientId, requestedInsight: type, rulesVersion: CLINICAL_RULES_VERSION, sources: context.sources, dataGaps, evidence: context.records },
@@ -264,8 +281,8 @@ export async function generateClinicalInsights(
         title: observation.title,
         summary: observation.summary,
         evidence: observation.evidence,
-        model: AI_MODEL_CLINICAL,
-        provider: "OPENAI",
+        model,
+        provider,
         promptVersion: PROMPT_VERSION,
         requiresReview: true,
       },

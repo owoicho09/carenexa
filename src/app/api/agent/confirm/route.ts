@@ -28,7 +28,13 @@ export async function POST(req: NextRequest) {
 
   const conversation: Anthropic.Messages.MessageParam[] = [...body.messages, { role: "user", content: mergedResults }];
 
-  const result = await runAgentLoop(session, conversation);
+  let result;
+  try {
+    result = await runAgentLoop(session, conversation);
+  } catch (e) {
+    console.error("[agent]", e);
+    return NextResponse.json({ error: "I hit a snag reaching the assistant — please try that again." }, { status: 502 });
+  }
 
   if (result.done) {
     return NextResponse.json({ done: true, messages: result.messages, reply: result.reply, executed: !confirmedResult.is_error });
