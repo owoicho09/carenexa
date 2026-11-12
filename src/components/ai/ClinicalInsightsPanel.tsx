@@ -41,6 +41,18 @@ const TYPE_LABEL: Record<string, string> = {
   LONGITUDINAL_SUMMARY: "Full history summary",
 };
 
+type Priority = "High" | "Moderate" | "Low";
+const PRIORITY_TONE: Record<Priority, "danger" | "warning" | "neutral"> = { High: "danger", Moderate: "warning", Low: "neutral" };
+const PRIORITY_RANK: Record<Priority, number> = { High: 0, Moderate: 1, Low: 2 };
+
+// Titles arrive as "[High] Blood pressure rising…" — split the tag into a badge.
+function splitPriority(title: string): { priority: Priority | null; text: string } {
+  const match = /^\s*\[(High|Moderate|Low)\]\s*/i.exec(title);
+  if (!match) return { priority: null, text: title };
+  const word = match[1].charAt(0).toUpperCase() + match[1].slice(1).toLowerCase();
+  return { priority: word as Priority, text: title.slice(match[0].length) };
+}
+
 function when(iso: string | Date) {
   return new Date(iso).toLocaleString("en-NG", { dateStyle: "medium", timeStyle: "short" });
 }
@@ -61,6 +73,13 @@ export function ClinicalInsightsPanel({
   dataGaps: string[];
 }) {
   const [state, formAction, pending] = useActionState(generateClinicalInsightsAction, undefined);
+  // Newest run first; within a run, most urgent first.
+  const ordered = [...insights].sort((a, b) => {
+    const t = new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+    if (Math.abs(t) > 60_000) return t;
+    const pa = splitPriority(a.title).priority, pb = splitPriority(b.title).priority;
+    return (pa ? PRIORITY_RANK[pa] : 3) - (pb ? PRIORITY_RANK[pb] : 3);
+  });
 
   return (
     <section className="space-y-5 border-t border-[var(--color-border)] pt-4">
@@ -111,7 +130,7 @@ export function ClinicalInsightsPanel({
                 {Object.entries(TYPE_LABEL).map(([value, label]) => <option key={value} value={value}>{label}</option>)}
               </Select>
               <Button type="submit" variant="secondary" size="sm" loading={pending}>
-                {pending ? "Looking…" : "Ask AI"}
+                {pending ? "Analysing record…" : "Ask AI"}
               </Button>
             </form>
           )}
@@ -119,19 +138,22 @@ export function ClinicalInsightsPanel({
 
         {!aiConfigured && <p className="text-sm text-[var(--color-text-muted)]">AI suggestions aren&rsquo;t switched on yet.</p>}
         <FormError>{state?.error}</FormError>
-        {state?.generated && <p role="status" className="text-sm text-[var(--color-success)]">Done. Each suggestion shows the records it is based on.</p>}
+        {pending && <p role="status" className="mb-2 animate-pulse text-sm text-[var(--color-text-muted)]">Reviewing every visit, vital, lab result and prescription on file…</p>}
+        {state?.generated && !pending && <p role="status" className="mb-2 text-sm text-[var(--color-success)]">Analysis complete. Most urgent findings are listed first, each linked to the records it is based on.</p>}
 
         {insights.length === 0 ? (
-          <p className="text-sm text-[var(--color-text-muted)]">Choose what to look for and press Ask AI.</p>
+          <p className="text-sm text-[var(--color-text-muted)]">Pick an analysis (possible risks, patterns over time, anything to note, or a full history) and press Ask AI. CareNexa reviews the whole record and cites the exact entries behind every finding.</p>
         ) : (
           <ul className="space-y-3">
-            {insights.map((insight) => {
+            {ordered.map((insight) => {
+              const { priority, text: titleText } = splitPriority(insight.title);
               const evidence = Array.isArray(insight.evidence) ? insight.evidence as Evidence[] : [];
               return (
                 <li key={insight.id} className="rounded-md border border-[var(--color-border)] p-3">
                   <div className="flex flex-wrap items-center justify-between gap-2">
-                    <div className="flex items-center gap-2">
-                      <h4 className="text-sm font-semibold text-[var(--color-text)]">{insight.title}</h4>
+                    <div className="flex flex-wrap items-center gap-2">
+                      {priority && <Badge tone={PRIORITY_TONE[priority]}>{priority} priority</Badge>}
+                      <h4 className="text-sm font-semibold text-[var(--color-text)]">{titleText}</h4>
                       <Badge tone={insight.requiresReview ? "warning" : "success"}>
                         {insight.requiresReview ? "Needs review" : "Reviewed"}
                       </Badge>
@@ -140,7 +162,7 @@ export function ClinicalInsightsPanel({
                   </div>
                   <p className="mt-2 text-sm text-[var(--color-text-muted)]">{insight.summary}</p>
                   <div className="mt-3 border-t border-[var(--color-border)] pt-2">
-                    <p className="text-xs font-medium text-[var(--color-text-muted)]">Based on</p>
+                    <p className="text-xs font-medium text-[var(--color-text-muted)]">Based on {evidence.length} record{evidence.length === 1 ? "" : "s"}</p>
                     <ul className="mt-1 space-y-1">
                       {evidence.map((item) => (
                         <li key={`${item.recordId}-${item.recordedAt}`} className="text-xs text-[var(--color-text-muted)]">

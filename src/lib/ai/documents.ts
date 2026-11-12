@@ -1,6 +1,6 @@
 import "server-only";
 import { db } from "@/lib/db";
-import { generateText, AI_MODEL_FAST, isAiConfigured } from "@/lib/ai/client";
+import { generateText, AI_MODEL_REASONING, isAiConfigured } from "@/lib/ai/client";
 
 async function loadVisitContext(visitId: string, hospitalId: string) {
   return db.visit.findUnique({
@@ -25,7 +25,7 @@ function formatVisitForPrompt(visit: NonNullable<Awaited<ReturnType<typeof loadV
   ];
   for (const v of visit.vitals) {
     const bp = v.systolicBp && v.diastolicBp ? `BP ${v.systolicBp}/${v.diastolicBp}` : null;
-    lines.push(`Vitals: ${[bp, v.temperatureC ? `Temp ${v.temperatureC}C` : null, v.pulseBpm ? `Pulse ${v.pulseBpm}` : null].filter(Boolean).join(", ")}`);
+    lines.push(`Vitals: ${[bp, v.temperatureC ? `Temp ${v.temperatureC}C` : null, v.pulseBpm ? `Pulse ${v.pulseBpm}` : null, v.respiratoryRate ? `RR ${v.respiratoryRate}` : null, v.weightKg ? `Weight ${v.weightKg}kg` : null].filter(Boolean).join(", ")}`);
   }
   for (const l of visit.labResults) {
     lines.push(`Lab: ${l.testName} = ${l.resultType === "NUMERIC" ? `${l.value}${l.unit}` : l.qualitativeValue}${l.isAbnormal ? " (abnormal)" : ""}`);
@@ -43,14 +43,14 @@ async function generateDocument(visitId: string, hospitalId: string, actorId: st
   if (!visit) return { text: null, reason: "Visit not found." as const };
 
   const prompt = `${formatVisitForPrompt(visit)}${extraPrompt ? `\n\n${extraPrompt}` : ""}`;
-  const text = await generateText({ model: AI_MODEL_FAST, system, prompt, maxTokens: 600 });
+  const text = await generateText({ model: AI_MODEL_REASONING, system, prompt, maxTokens: 1200 });
 
   const artifact = await db.aiArtifact.create({
     data: {
       hospitalId,
       type,
       visitId,
-      model: AI_MODEL_FAST,
+      model: AI_MODEL_REASONING,
       provider: "ANTHROPIC",
       generatedById: actorId,
       promptVersion: type === "DISCHARGE_SUMMARY" ? "discharge-summary-v1" : "referral-letter-v1",
